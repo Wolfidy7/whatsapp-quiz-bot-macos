@@ -133,11 +133,15 @@ def test_send(sender):
     window.attrs['AXChildren'].append(composer)
     with pytest.raises(QuizError):sender.send('hi','MARKER')
     composer.attrs['AXValue']=''
-    with patch.object(sender,'paste'),patch.object(sender,'menu'),patch('quiz_app.ax_sender.time.sleep'):
+    window.attrs['AXChildren'].append(Node(AXIdentifier='ChatBar_SendButton',AXEnabled=True))
+    with patch.object(sender,'paste'),patch.object(sender,'menu'),patch('quiz_app.ax_sender.click_control') as click,patch('quiz_app.ax_sender.time.sleep'):
         with pytest.raises(QuizError):sender.send('hi','MARKER')
         table.attrs['AXChildren'].append(Node(AXIdentifier='WAMessageBubbleTableViewCell',AXPosition=20,AXDescription='Your message, hi MARKER, 09:00, Sent to Test, Delivered'))
         ax.AXValueGetValue.side_effect=lambda value,kind,unused:(True,SimpleNamespace(y=value))
         sender.send('hi','MARKER')
+        assert click.call_count==2
+        window.attrs['AXChildren'][-1].attrs['AXEnabled']=False
+        with pytest.raises(QuizError,match='disabled'):sender.publish('hi','MARKER')
 
 
 def test_pixel_geometry_and_foreground(sender):
@@ -209,3 +213,12 @@ def test_console_click_safety(sender):
         for session in [None,{'CGSSessionScreenIsLocked':True},{'kCGSSessionOnConsoleKey':False}]:
             quartz.CGSessionCopyCurrentDictionary.return_value=session
             with pytest.raises(QuizError):ensure_foreground(reader)
+
+
+def test_directional_marks_in_native_menus(sender):
+    sender,reader,(ax,cocoa,app,*_)=sender
+    entry=Node(AXRole='AXMenuItem',AXTitle='\u200eSend\u200f')
+    heading=Node(AXTitle='\u200eChat',AXChildren=[entry])
+    app.attrs['AXMenuBar']=Node(AXChildren=[heading])
+    sender.menu(('Chat',),('Send',))
+    assert ax.AXUIElementPerformAction.call_args.args[1]=='AXCancel'

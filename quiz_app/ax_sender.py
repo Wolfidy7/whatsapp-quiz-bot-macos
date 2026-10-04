@@ -5,6 +5,7 @@ from typing import Any
 
 from quiz_app.ax_reader import AXReader
 from quiz_app.errors import QuizError
+from quiz_app.native import clean_description
 from quiz_app.scrolling import click_control, ensure_foreground
 
 
@@ -37,7 +38,7 @@ class AXSender:
             [
                 node
                 for node in reader.attr(bar, "AXChildren") or []
-                if reader.attr(node, "AXTitle") in headings
+                if clean_description(str(reader.attr(node, "AXTitle") or "")) in headings
             ],
             "menu",
         )
@@ -47,7 +48,8 @@ class AXSender:
                 [
                     node
                     for node in reader.walk(heading)
-                    if reader.attr(node, "AXRole") == "AXMenuItem" and reader.attr(node, "AXTitle") in entries
+                    if reader.attr(node, "AXRole") == "AXMenuItem"
+                    and clean_description(str(reader.attr(node, "AXTitle") or "")) in entries
                 ],
                 "menu entry",
             )
@@ -95,8 +97,8 @@ class AXSender:
                 if originals:
                     board.writeObjects_(originals)
 
-    def send(self, text: str, marker: str) -> None:
-        """Publish once and check its outgoing marker; never retry an uncertain publication."""
+    def publish(self, text: str, marker: str) -> None:
+        """Paste the reserved text and click the native send button once; caller confirms publication."""
         reader = self.reader
         ensure_foreground(reader)
         reader.require_group()
@@ -109,9 +111,23 @@ class AXSender:
             raise QuizError("PUBLICATION_UNCERTAIN", "An existing draft prevents sending")
         self.paste(composer, text)
         reader.require_group()
-        self.menu(("Chat", "Discussion", "Conversation"), ("Send", "Envoyer"))
+        send_button = unique(
+            [
+                node
+                for node in reader.walk(reader.attr(reader.app, "AXMainWindow"))
+                if reader.attr(node, "AXIdentifier") == "ChatBar_SendButton"
+            ],
+            "send button",
+        )
+        if reader.attr(send_button, "AXEnabled") is False:
+            raise QuizError("UI_UNAVAILABLE", "WhatsApp send button is disabled")
+        click_control(reader, send_button)
         time.sleep(0.5)
-        rows = reader.page()
+
+    def send(self, text: str, marker: str) -> None:
+        """Legacy diagnostic confirmation through visible rows; native database transport uses publish."""
+        self.publish(text, marker)
+        rows = self.reader.page()
         matches = [row for row in rows if row.outgoing and marker in row.body]
         if len(matches) != 1:
             raise QuizError("PUBLICATION_UNCERTAIN", "Outgoing marker could not be uniquely confirmed")

@@ -14,7 +14,7 @@ from quiz_app.models import Message
 
 REFERENCE_DATE = datetime(2001, 1, 1, tzinfo=timezone.utc)
 COLUMNS = """m.Z_PK, m.ZSORT, m.ZSTANZAID, m.ZTEXT, m.ZISFROMME, m.ZMESSAGEDATE,
-COALESCE(NULLIF(g.ZCONTACTNAME,''),NULLIF(g.ZFIRSTNAME,''),NULLIF(m.ZPUSHNAME,'')),
+COALESCE(NULLIF(g.ZCONTACTNAME,''),NULLIF(g.ZFIRSTNAME,'')),
 COALESCE(NULLIF(g.ZMEMBERJID,''),NULLIF(m.ZFROMJID,''))"""
 FROM = "FROM ZWAMESSAGE m LEFT JOIN ZWAGROUPMEMBER g ON g.Z_PK=m.ZGROUPMEMBER "
 
@@ -86,6 +86,50 @@ def ordered_rows(rows: list[tuple[Any, ...]], group_id: int) -> list[Message]:
     return messages
 
 
+def contact_names(path: Path, senders: set[str]) -> dict[str, set[str]]:
+    """Read labels only for scoped senders from the optional native contact source; reject schema failures."""
+    contacts = path.expanduser().with_name("ContactsV2.sqlite")
+    if not senders or not contacts.exists():
+        return {}
+    identifiers = sorted(senders | {sender.partition("@")[0] for sender in senders})
+    placeholders = ",".join("?" for _ in identifiers)
+    with readonly(contacts) as connection:
+        rows = connection.execute(
+            "SELECT ZWHATSAPPID,ZLID,COALESCE(NULLIF(ZFULLNAME,''),NULLIF(ZGIVENNAME,''),"
+            "NULLIF(ZBUSINESSNAME,'')) FROM ZWAADDRESSBOOKCONTACT "
+            f"WHERE ZWHATSAPPID IN ({placeholders}) OR ZLID IN ({placeholders})",
+            identifiers + identifiers,
+        ).fetchall()
+    return index_contacts(rows)
+
+
+def index_contacts(rows: list[tuple[Any, ...]]) -> dict[str, set[str]]:
+    """Index available contact labels by native addresses; retain conflicts for explicit rejection."""
+    names: dict[str, set[str]] = {}
+    for phone, lid, name in rows:
+        if not name:
+            continue
+        for identity in (phone, lid):
+            if identity:
+                names.setdefault(str(identity), set()).add(str(name))
+    return names
+
+
+def named_rows(rows: list[tuple[Any, ...]], path: Path) -> list[tuple[Any, ...]]:
+    """Resolve readable native labels without using encoded push metadata or exposing sender addresses."""
+    senders = {str(row[7]) for row in rows if row[7] and not row[4]}
+    names = contact_names(path, senders)
+    result = []
+    for row in rows:
+        sender = str(row[7] or "")
+        labels = names.get(sender, set()) | names.get(sender.partition("@")[0], set())
+        if len(labels) > 1:
+            raise QuizError("AUTHOR_AMBIGUOUS", "Native contacts disagree about a sender's display name")
+        label = next(iter(labels), row[6])
+        result.append((*row[:6], label, row[7]))
+    return result
+
+
 def boundary(connection: sqlite3.Connection, group_id: int, marker: str) -> int:
     """Find one outgoing marker within the selected group; fail on absent/duplicate boundaries."""
     rows = connection.execute(
@@ -116,7 +160,7 @@ class DatabaseReader:
                 "ORDER BY m.ZSORT DESC,m.Z_PK DESC LIMIT ?",
                 (group_id, count),
             ).fetchall()
-            return ordered_rows(list(reversed(rows)), group_id)
+            return ordered_rows(named_rows(list(reversed(rows)), self.path), group_id)
 
     def segment(self, start: str, stop: str | None = None) -> list[Message]:
         """Read the complete strict question/STOP interval without any UI traversal."""
@@ -132,7 +176,7 @@ class DatabaseReader:
                 query += "AND m.ZSORT<? "
                 parameters.append(end)
             rows = connection.execute(query + "ORDER BY m.ZSORT,m.Z_PK", parameters).fetchall()
-            return ordered_rows(rows, group_id)
+            return ordered_rows(named_rows(rows, self.path), group_id)
 
 
 class DatabaseTransport:

@@ -58,7 +58,7 @@ def test_controller_errors(root):
     controller.cancel()
     with patch('quiz_app.app.AXReader') as reader,patch('quiz_app.app.AXSender'),patch('quiz_app.app.DatabaseReader'):
         write_json(root/'data/transport-validation.json',{'group':'Test','validated':True,'schema':2})
-        assert controller.transport('native','Test',40,'fake.sqlite').sender==__import__('quiz_app.app',fromlist=['AXSender']).AXSender.return_value.send
+        assert controller.transport('native','Test',40,'fake.sqlite').sender==__import__('quiz_app.app',fromlist=['AXSender']).AXSender.return_value.publish
         with pytest.raises(QuizError):controller.transport('native','Other',40,'fake.sqlite')
 
 def test_recovery_and_background(root):

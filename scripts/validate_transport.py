@@ -28,7 +28,7 @@ def run_validation(expected_path: Path, seconds: int, root: Path) -> None:
     reader = AXReader("Test")
     source = DatabaseReader(Path(load_settings(root / ".env").whatsapp_database), "Test")
     source.recent(1)
-    transport = DatabaseTransport(source, AXSender(reader).send)
+    transport = DatabaseTransport(source, AXSender(reader).publish)
     id_ = uuid4().hex
     start, stop = f"[validation:{id_}:question]", f"[validation:{id_}:stop]"
     path = root / f"data/diagnostics/validation-{id_}.json"

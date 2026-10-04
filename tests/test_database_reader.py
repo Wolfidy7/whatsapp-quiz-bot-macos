@@ -89,3 +89,20 @@ def test_one_hundred_in_single_read(source):
 def test_group_address_is_not_a_player():
     message=parse_row((1,1,'id','!join',False,0,'Group','group@g.us'),1)
     assert message.author_id=='' and message.author==''
+
+
+def test_native_contact_names_and_encoded_push(source):
+    from quiz_app.database_reader import contact_names,named_rows
+    contacts=source.with_name('ContactsV2.sqlite')
+    db=sqlite3.connect(contacts)
+    db.executescript('''CREATE TABLE ZWAADDRESSBOOKCONTACT (ZWHATSAPPID TEXT,ZLID TEXT,ZFULLNAME TEXT,ZGIVENNAME TEXT,ZBUSINESSNAME TEXT);
+    INSERT INTO ZWAADDRESSBOOKCONTACT VALUES ('member-a','lid-a','Camille',NULL,NULL),('member-b',NULL,NULL,'Robin',NULL),(NULL,'blank',NULL,NULL,NULL),(NULL,'business',NULL,NULL,'Fictional business');''')
+    db.commit();db.close()
+    assert contact_names(source,set())=={}
+    assert contact_names(source,{'business'})['business']=={'Fictional business'}
+    assert contact_names(source,{'blank'})=={}
+    assert DatabaseReader(source,'Test').recent(1)[0].author=='Robin'
+    row=(1,1,'m','!join',False,0,None,'lid-a@lid')
+    assert named_rows([row],source)[0][6]=='Camille'
+    db=sqlite3.connect(contacts);db.execute("INSERT INTO ZWAADDRESSBOOKCONTACT VALUES ('member-a',NULL,'Conflicting label',NULL,NULL)");db.commit();db.close()
+    with pytest.raises(QuizError,match='disagree'):DatabaseReader(source,'Test').recent(100)

@@ -21,7 +21,7 @@ jobs:
       - run: python scripts/check_coverage.py
       - run: ruff check quiz_app scripts
       - run: ruff format --check quiz_app scripts
-      - run: mypy quiz_app
+      - run: mypy quiz_app scripts
       - run: complexipy quiz_app scripts --max-complexity-allowed 10
       - run: npm run lint
       - run: npm test

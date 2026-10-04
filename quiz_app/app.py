@@ -100,7 +100,7 @@ class Controller:
         reader = AXReader(group, max_pages)
         source = DatabaseReader(Path(database), group)
         source.recent(1)
-        return DatabaseTransport(source, AXSender(reader).send)
+        return DatabaseTransport(source, AXSender(reader).publish)
 
     def state(self) -> dict[str, object]:
         """Return a fresh JSON-safe snapshot for the dashboard."""

@@ -1,6 +1,6 @@
 # WhatsApp Quiz Studio for macOS
 
-A local quiz host for WhatsApp Desktop: explicit aliases, chronological first answers, transparent rank-based points and private JSON storage. There is **no LLM, WhatsApp Web or cloud service**. Application data stays in JSON. Incoming messages are read from WhatsApp Desktop’s existing local SQLite database through read-only connections; the bot never writes to that database.
+A local quiz host for WhatsApp Desktop: explicit aliases, chronological first answers, transparent rank-based points and private JSON storage. There is **no LLM, WhatsApp Web or cloud service**. Application data stays in JSON. Incoming messages are read from WhatsApp Desktop’s existing local SQLite database through read-only connections; readable sender names are resolved from the adjacent native ContactsV2.sqlite when available. The bot never writes to either database.
 
 The application includes a local question editor, an answer tester, a deterministic simulator, direct native message reading, an accessibility sender, durable game snapshots and explicit incident recovery. **Native gameplay is gated by a controlled transport test. It has not yet been validated in a real quiz round.** Direct reading has recovered 100 local records without scrolling, preserving their authors, timestamps and native sequence. That diagnostic does not replace a controlled question/STOP test.
 
@@ -11,8 +11,8 @@ The application includes a local question editor, an answer tester, a determinis
 - Keep WhatsApp available while a native game is running. Avoid navigating to another chat, editing messages or changing the desktop during collection.
 - WhatsApp’s internal database schema and accessibility selectors are undocumented and version-dependent. Missing metadata, markers, native sequence values or changed observations pause a game instead of producing a partial leaderboard.
 - Reading covers **locally synchronized records**, not the full cloud history. A fresh read transaction includes the live database journal. Missing or unavailable local data blocks collection; no completeness claim is made about unsynchronized messages.
-- Native sender identities are hashed before application storage. Two participants sharing a display name remain separate players, with short identity suffixes in results. Missing sender identities for answers or registrations block scoring. Names are not verified real-world identities.
-- The database supplies native timestamps with seconds and a conversation sequence. Eligibility and rank use the strict native sequence between the outgoing question and STOP markers, rather than clock comparisons or display order.
+- Native sender identities are hashed before application storage. Names come from scoped queries in the native contact database, with group-member labels or a neutral identity suffix as fallback; encoded push metadata is never displayed as a name. Two participants sharing a display name remain separate players, with short identity suffixes in results. Missing sender identities for answers or registrations block scoring. Names are not verified real-world identities.
+- The message database supplies native timestamps with seconds and a conversation sequence. Eligibility and rank use the strict native sequence between the outgoing question and STOP markers, rather than clock comparisons or display order.
 - The current implementation was checked on macOS 26.6.2, Python 3.12 and PyObjC 12.2.2. Other supported combinations require their own native validation.
 - This service does not automatically resume after a crash, logout or shutdown. Timers work only while the local process is running. Recovery always requires an operator action.
 
@@ -95,7 +95,7 @@ Find the real executable:
 
 Click **+**, then **Cmd+Shift+G** and paste that path. If the picker hides the executable, select it in Finder and drag it into the Accessibility list; enable its switch. Restart the terminal/service after granting access if needed. See [Apple Accessibility settings](https://support.apple.com/en-gb/guide/mac-help/mchl211c911f/27/mac/27).
 
-Database reading also requires macOS to permit access to the configured WhatsApp group-container file. Accessibility permission does not itself grant file access. If reading reports `SOURCE_UNAVAILABLE`, check the path and operating-system denial first. Grant Full Disk Access to the actual launching terminal or Python only if macOS denies this source; use **Privacy & Security → Full Disk Access** and the same executable-selection procedure. Do not copy the live database or its journal into Git.
+Database reading also requires macOS to permit access to the configured WhatsApp group-container file. Accessibility permission does not itself grant file access. If reading reports `SOURCE_UNAVAILABLE`, check the path and operating-system denial first. Grant Full Disk Access to the actual launching terminal or Python only if macOS denies these sources; use **Privacy & Security → Full Disk Access** and the same executable-selection procedure. Do not copy the live database or its journal into Git.
 
 Read the latest 100 local records **without scrolling or sending**:
 
@@ -136,6 +136,18 @@ python -m scripts.validate_transport --expected data/expected.json --seconds 30
 Stop the web service before this command: the validator acquires the same exclusive service lock. Open Test first and ensure the message composer is empty and focused. Send the agreed replies during the announced window. The test compares the complete recovered segment with the exact expected authors, bodies and order. Success writes a private validation receipt. Only then does **Start in WhatsApp** become available for the matching group. Restart or reload the dashboard after successful validation.
 
 Each validation send is reserved in a private diagnostic JSON before publication. A missed or uncertain send is never silently retried. Inspect WhatsApp and that reserved message first; the validator does not automatically recover or replay an interrupted attempt. This test is currently restricted to Test; adapting and validating another target group is a separate explicit operator step.
+
+### Automatically enroll a test player
+
+No manually entered participant name is required in automatic mode. Open the exact target group with an empty composer, stop the local web service, and arrange for one **other account** to participate:
+
+```sh
+python -m scripts.validate_auto --group "Test" --join-seconds 180 --seconds 60
+```
+
+This command posts an enrollment announcement, accepts the first incoming `!join` using its stable native sender identity, closes enrollment and publishes a question. The answer-window limit is 180 seconds; use `--seconds 120` for a slower rehearsal. That player must send three separate messages in this exact order: `!r Paris`, `!r Londres`, `!r Paris`, before STOP. Commands use the current `.env` prefixes. The validator checks the complete native segment, its author identity and order (nontext records remain in evidence and are ignored as answers), and verifies that only the first answer earns points. It then publishes the verified result and writes a receipt scoped to the explicitly selected group. Set `WHATSAPP_GROUP` to that same group before starting a native game.
+
+A reply from the bot's own account, including the same account on a phone, is outgoing and cannot enroll. Incorrect, incomplete, edited or unexpected transcripts do not produce a successful validation receipt. Private evidence and write-ahead reservations remain under `data/diagnostics/`; an interrupted attempt is not automatically replayed. These are real group messages: use a dedicated group whose members expect the test.
 
 ## Scoring
 
@@ -179,7 +191,7 @@ flowchart TD
   ENGINE --> SIM[Deterministic simulator]
 ```
 
-Python/Pydantic validate contracts; FastAPI serves the local control plane. PyObjC exposes Cocoa (`NSWorkspace` and clipboard integration), ApplicationServices (AX permissions, attributes and actions) and Quartz (foreground-checked input events). Python’s `sqlite3` opens WhatsApp’s existing source with `mode=ro`, `query_only` and a consistent transaction. Group queries are exact and parameterized. Native message identifiers preserve distinct repeated texts; sender identifiers separate identical display names. The reader rejects missing/tied sequence values and duplicated message identifiers. First observations are compared with the final recovered segment; edits or deletions cause an incident rather than a second attempt.
+Python/Pydantic validate contracts; FastAPI serves the local control plane. PyObjC exposes Cocoa (`NSWorkspace` and clipboard integration), ApplicationServices (AX permissions, attributes and actions) and Quartz (foreground-checked composer focus and send-button clicks). Sending is confirmed against the native message database; a successful accessibility action alone is not proof of publication. Python’s `sqlite3` opens WhatsApp’s existing source with `mode=ro`, `query_only` and a consistent transaction. Group queries are exact and parameterized. Native message identifiers preserve distinct repeated texts; sender identifiers separate identical display names. The reader rejects missing/tied sequence values and duplicated message identifiers. First observations are compared with the final recovered segment; edits or deletions cause an incident rather than a second attempt.
 
 Accessibility pagination remains a diagnostic fallback prototype. Its UI cells can be virtualized and reused, so it is not evidence that an entire history has been recovered. Production collection and send confirmation use the native database. Application locks, write-ahead reservations, atomic JSON replacement and backups remain separate from this read-only external source.
 
@@ -197,7 +209,7 @@ Accessibility pagination remains a diagnostic fallback prototype. Its UI cells c
 | `quiz_app/native.py` | Legacy accessibility metadata and traversal diagnostic |
 | `quiz_app/ax_reader.py` | Read-only native permissions, tree, rows and scrolling |
 | `quiz_app/scrolling.py` | Foreground-checked small wheel steps with verified table geometry |
-| `quiz_app/ax_sender.py` | Empty-draft checks, clipboard preservation and confirmed sending |
+| `quiz_app/ax_sender.py` | Empty-draft checks, clipboard preservation, exact send-button selection and confirmed sending |
 | `quiz_app/engine.py` | Game phases, reservations, reports and recovery |
 | `quiz_app/storage.py`, `repository.py` | Locks, atomic writes, backups and schema validation |
 | `quiz_app/app.py`, `__main__.py` | Local HTTP endpoints and service launcher |
@@ -205,6 +217,7 @@ Accessibility pagination remains a diagnostic fallback prototype. Its UI cells c
 | `scripts/read_messages.py` | Fast read-only message-count diagnostic and optional private export |
 | `scripts/probe_whatsapp.py` | Legacy read-only accessibility prototype |
 | `scripts/validate_transport.py` | Explicit controlled native test in Test |
+| `scripts/validate_auto.py` | Automatic native enrollment, known-order round and first-answer scoring validation |
 | `scripts/check_coverage.py` | Exact Python line/branch quality gates |
 | `tests/` | Rules, native fakes, recovery, storage, HTTP and large-game simulations |
 | `tests/frontend/` | JavaScript helpers and dashboard interactions |
@@ -227,7 +240,7 @@ python -m pytest
 python scripts/check_coverage.py
 ruff check quiz_app scripts
 ruff format --check quiz_app scripts
-mypy quiz_app
+mypy quiz_app scripts
 complexipy quiz_app scripts --max-complexity-allowed 10
 npm run lint
 npm test
