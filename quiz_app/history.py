@@ -1,6 +1,7 @@
 """Order reconstruction that refuses ambiguous page overlaps."""
 
 from quiz_app.errors import QuizError
+from quiz_app.grading import extract_answer
 from quiz_app.models import Message
 
 
@@ -36,3 +37,24 @@ def reconcile(previous: list[Message], current: list[Message]) -> list[Message]:
     ]:
         raise QuizError("HISTORY_CHANGED", "Observed messages changed or disappeared; manual review required")
     return previous + current[len(previous) :]
+
+
+def is_quiz_command(message: Message, join: str, prefix: str) -> bool:
+    """Identify enrollment or a qualified answer; empty answer commands are not attempts."""
+    return (
+        message.body.strip().casefold() == join.casefold() or extract_answer(message.body, prefix) is not None
+    )
+
+
+def reconcile_game(previous: list[Message], current: list[Message], join: str, prefix: str) -> list[Message]:
+    """Freeze edits of unrelated incoming chat; reject command edits, changed identities and order gaps."""
+    frozen = current.copy()
+    for index, (old, new) in enumerate(zip(previous, current)):
+        if (
+            old.fingerprint == new.fingerprint
+            and not old.outgoing
+            and not is_quiz_command(old, join, prefix)
+            and not is_quiz_command(new, join, prefix)
+        ):
+            frozen[index] = new.model_copy(update={"body": old.body})
+    return reconcile(previous, frozen)

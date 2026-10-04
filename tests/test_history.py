@@ -108,3 +108,21 @@ def test_fast_native_preview():
     assert transport.preview('Q') is None
     assert transport.preview('absent') is None
     assert view.restored==0 # no history traversal while STOP deadline is running
+
+
+def test_unrelated_edits_do_not_change_quiz_attempts():
+    from quiz_app.history import reconcile_game
+    from quiz_app.models import Message
+    old=Message(author='Camille',author_id='one',body='typo',fingerprint='message-one')
+    new=old.model_copy(update={'body':'corrected'})
+    extra=Message(author='Robin',author_id='two',body='!r Paris',fingerprint='message-two')
+    assert reconcile_game([old],[new,extra],'!join','!r')==[old,extra]
+    assert new.body=='corrected' # the source observation is not mutated
+    for changed in [{'body':'!join'},{'body':'!r Paris'},{'author_id':'different'},{'fingerprint':'different'}]:
+        with pytest.raises(QuizError):reconcile_game([old],[old.model_copy(update=changed)],'!join','!r')
+    for command in ['!join','!r Paris']:
+        answer=old.model_copy(update={'body':command})
+        with pytest.raises(QuizError):reconcile_game([answer],[answer.model_copy(update={'body':'corrected'})],'!join','!r')
+    sent=old.model_copy(update={'outgoing':True})
+    with pytest.raises(QuizError):reconcile_game([sent],[sent.model_copy(update={'body':'changed'})],'!join','!r')
+    with pytest.raises(QuizError):reconcile_game([old],[],'!join','!r')

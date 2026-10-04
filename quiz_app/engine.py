@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from quiz_app.errors import QuizError
 from quiz_app.grading import extract_answer, match_answer
-from quiz_app.history import reconcile
+from quiz_app.history import reconcile_game
 from quiz_app.models import Dispatch, Message, Question, Result, Round, Session, Settings
 from quiz_app.scoring import points_for_rank, standings
 from quiz_app.storage import write_json
@@ -191,7 +191,16 @@ class Engine:
     def observe(self, start: str, stop: str | None, previous: list[Message]) -> list[Message]:
         """Use fast provisional prefixes during play and a complete traversal after STOP."""
         current = self.transport.segment(start, stop) if stop is not None else self.transport.preview(start)
-        return previous if current is None else reconcile(previous, current)
+        return (
+            previous
+            if current is None
+            else reconcile_game(
+                previous,
+                current,
+                self.session.settings.join_command,
+                self.session.settings.answer_prefix,
+            )
+        )
 
     def registration(self) -> None:
         """Collect join messages, then freeze enrollment between two confirmed markers."""
