@@ -1,0 +1,291 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #182b26;
+  background: #f3f5ef;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #d7dfd5;
+  padding: 24px max(5vw, 20px);
+  background: #ffffff80;
+}
+.brand {
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.6px;
+}
+.badge {
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  border: 1px solid #b6cbb9;
+  border-radius: 30px;
+  padding: 7px 11px;
+  color: #39644b;
+  white-space: nowrap;
+}
+main {
+  max-width: 1240px;
+  margin: auto;
+  padding: 45px 28px;
+}
+.hero {
+  max-width: 720px;
+  margin-bottom: 36px;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #688573;
+}
+h1 {
+  font-size: clamp(40px, 6vw, 66px);
+  font-weight: 600;
+  letter-spacing: -3px;
+  line-height: 1.02;
+  margin: 18px 0;
+}
+p {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.hero > p:last-child {
+  color: #647568;
+  max-width: 550px;
+}
+.columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.card {
+  min-width: 0;
+  background: #fff;
+  border: 1px solid #dce2d7;
+  border-radius: 18px;
+  padding: 25px;
+  box-shadow: 0 10px 30px #1f3f2406;
+}
+h2 {
+  font-size: 17px;
+  margin: 0;
+}
+h3 {
+  font-size: 14px;
+  margin-top: 24px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.muted,
+small {
+  color: #738177;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0;
+  flex-wrap: wrap;
+}
+.actions input {
+  flex: 1;
+  min-width: 120px;
+}
+button,
+.file-button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  border-radius: 8px;
+  padding: 11px 15px;
+  cursor: pointer;
+  border: 1px solid #174b36;
+  background: #174b36;
+  color: white;
+}
+button:hover {
+  filter: brightness(1.12);
+}
+.secondary,
+.file-button {
+  color: #264e39;
+  background: #f2f6ee;
+  border-color: #d5ded1;
+}
+.danger {
+  background: #fff8f3;
+  color: #935d43;
+  border-color: #e8cabb;
+}
+label {
+  display: block;
+  font-size: 12px;
+  margin: 14px 0 7px;
+  font-weight: 600;
+}
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid #d6ded3;
+  border-radius: 8px;
+  padding: 11px;
+  background: #fbfcf9;
+  color: #203b2c;
+  font: inherit;
+  font-size: 13px;
+}
+textarea,
+pre {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+}
+textarea {
+  resize: vertical;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid #a3c1a7;
+  outline-offset: 1px;
+}
+.file-button {
+  margin: 0;
+}
+.file-button input {
+  display: none;
+}
+hr {
+  border: 0;
+  border-top: 1px solid #e4e9e0;
+  margin: 25px 0;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 25px 0;
+}
+.stats > div {
+  background: #f3f6ef;
+  border-radius: 10px;
+  padding: 14px;
+}
+small {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 600;
+}
+.prompt {
+  border-left: 3px solid #8ba888;
+  padding-left: 15px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f5f7f2;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+}
+details {
+  font-size: 12px;
+  margin-top: 20px;
+}
+summary {
+  cursor: pointer;
+  color: #55715a;
+}
+footer {
+  font-size: 11px;
+  color: #7b8a7d;
+  margin: 30px 0;
+}
+#notice:not(:empty) {
+  padding: 14px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  background: #ffeeda;
+  color: #764527;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+@media (max-width: 800px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  main {
+    padding: 28px 16px;
+  }
+  .card {
+    padding: 20px;
+  }
+  .section-heading {
+    flex-wrap: wrap;
+  }
+  h1 {
+    letter-spacing: -2px;
+  }
+  .stats > div {
+    padding: 10px;
+  }
+}
+
+input,
+textarea,
+select {
+  min-width: 0;
+}
+header {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+button,
+.file-button {
+  min-height: 44px;
+}
+#notice,
+.prompt {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 400px) {
+  main {
+    padding-inline: 12px;
+  }
+  .card {
+    padding: 16px;
+  }
+  .stats {
+    gap: 6px;
+  }
+  .stats > div {
+    padding: 8px;
+  }
+  strong {
+    font-size: 20px;
+  }
+}

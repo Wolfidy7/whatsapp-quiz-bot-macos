@@ -1,0 +1,4 @@
+[
+  {"id":"capital", "question":"Quelle est la capitale de la France ?", "answer":"Paris", "aliases":["Ville de Paris"], "explanation":"Paris est la capitale de la France."},
+  {"id":"language", "question":"Quel langage utilise le symbole C suivi de deux signes plus ?", "answer":"C++", "aliases":[], "explanation":"Les deux signes plus font partie du nom."}
+]

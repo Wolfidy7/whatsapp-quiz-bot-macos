@@ -1,0 +1,22 @@
+[project]
+name = "whatsapp-quiz-bot-macos"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Local WhatsApp Mac quiz with deterministic grading and JSON persistence"
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=quiz_app --cov-branch --cov-report=term-missing --cov-report=json --cov-fail-under=95"
+[tool.coverage.run]
+source = ["quiz_app"]
+[tool.coverage.report]
+exclude_also = []
+[tool.ruff]
+line-length = 110
+[tool.ruff.lint]
+select = ["E", "F", "I", "D102", "D103"]
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true

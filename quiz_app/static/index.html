@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Quiz studio</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <span class="brand">◈ Quiz studio</span
+      ><span class="badge">LOCAL · NO LLM</span>
+    </header>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">WHATSAPP QUIZ · MACOS</p>
+        <h1>A good question.<br />A fair game.</h1>
+        <p>
+          Build your question bank, check accepted answers, and rehearse every
+          round before going live.
+        </p>
+      </section>
+      <div id="notice" role="status" aria-live="polite"></div>
+      <div class="columns">
+        <section class="card">
+          <div class="section-heading">
+            <h2>01 / Question bank</h2>
+            <button id="export" class="secondary">Export JSON</button>
+          </div>
+          <p class="muted">
+            One official answer. Explicit aliases. No guesswork.
+          </p>
+          <label for="bank">Question bank JSON</label
+          ><textarea id="bank" spellcheck="false" rows="14"></textarea>
+          <div class="actions">
+            <button id="save">Save bank</button
+            ><label class="file-button"
+              >Import JSON<input
+                type="file"
+                id="import"
+                accept="application/json,.json"
+            /></label>
+          </div>
+          <hr />
+          <h3>Answer tester</h3>
+          <label for="question">Question</label
+          ><select id="question"></select
+          ><label for="candidate">Player's answer</label>
+          <div class="actions">
+            <input id="candidate" placeholder="Paris" /><button
+              id="check"
+              class="secondary"
+            >
+              Check
+            </button>
+          </div>
+          <p id="verdict" role="status" class="muted">
+            Uses the same correction rules as a game.
+          </p>
+        </section>
+        <section class="card">
+          <div class="section-heading">
+            <h2>02 / Game room</h2>
+            <span id="phase" class="badge">READY</span>
+          </div>
+          <p class="muted">
+            Simulation is available. Native games await controlled transport
+            validation.
+          </p>
+          <details>
+            <summary>Current .env settings</summary>
+            <pre id="settings"></pre>
+          </details>
+          <div class="actions">
+            <button id="start">Start simulation</button
+            ><button id="native" class="secondary" disabled>
+              Start in WhatsApp</button
+            ><button id="cancel" class="danger">Stop game</button>
+          </div>
+          <div class="stats">
+            <div><small>Players</small><strong id="players">—</strong></div>
+            <div><small>Round</small><strong id="round">—</strong></div>
+            <div><small>Remaining</small><strong id="remaining">—</strong></div>
+          </div>
+          <p id="prompt" class="prompt">
+            Choose your questions and start a rehearsal.
+          </p>
+          <h3>Simulate a player</h3>
+          <label for="author">Display name</label
+          ><input id="author" value="Camille" maxlength="100" /><label
+            for="reply"
+            >Message</label
+          >
+          <div class="actions">
+            <input id="reply" value="!join" maxlength="4000" /><button
+              id="inject"
+              class="secondary"
+            >
+              Send locally
+            </button>
+          </div>
+          <h3>Results & evidence</h3>
+          <pre id="results">No active game.</pre>
+          <details>
+            <summary>Pending send evidence</summary>
+            <pre id="pending">None.</pre>
+          </details>
+          <details>
+            <summary>Recover an archived game</summary>
+            <p>Archives open paused. Pending sends are never replayed.</p>
+            <label for="archive">Session ID</label
+            ><input id="archive" maxlength="32" /><button
+              id="resume"
+              class="secondary"
+            >
+              Verify sends & resume</button
+            ><button id="recover" class="secondary">Inspect archive</button>
+          </details>
+        </section>
+      </div>
+      <footer>
+        Only this computer · JSON storage · Exact answers, transparent scoring
+      </footer>
+    </main>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
