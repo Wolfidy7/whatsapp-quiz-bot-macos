@@ -154,10 +154,10 @@ A reply from the bot's own account, including the same account on a phone, is ou
 Use the normal game engine for multiple questions, intermediate scores and a final breakdown:
 
 ```sh
-python -m scripts.play_rehearsal --group "Test" --players 2 --questions data/questions.json --join-seconds 180 --seconds 60
+python -m scripts.play_rehearsal
 ```
 
-Open that exact group with an empty composer, stop the web service, and have the specified number of other accounts ready. Everyone must send `!join` after enrollment opens. The command refuses to start questions if the required count is missing at closure. The selected bank supplies the questions, limited by `MAX_QUESTIONS`. Players answer naturally with `!r their answer`; no predetermined reply sequence is required. Intermediate and final scores are published in WhatsApp and printed in the terminal.
+Configure `WHATSAPP_GROUP`, `MAX_PLAYERS`, `MAX_QUESTIONS`, `REGISTRATION_SECONDS`, `QUESTION_SECONDS` and `INTERVAL_SECONDS` in `.env`. The default bank is `data/questions.json`, resolved from the project directory. No command-line parameters are required. Open that exact group with an empty composer, stop the web service, and have the configured number of other accounts ready. Everyone must send `!join` after enrollment opens. For this rehearsal, `MAX_PLAYERS` is the required enrollment count: the command refuses to start questions if that count is missing at closure. The selected bank supplies the questions, limited by `MAX_QUESTIONS`. Players answer naturally with `!r their answer`; no predetermined reply sequence is required. Intermediate and final scores are published in WhatsApp and printed in the terminal.
 
 Defaults come from `.env`; explicit command-line overrides apply only to this session snapshot. Every run creates a fresh archived game under `data/sessions/`. Stop with Ctrl+C; interrupted games are never automatically resumed or replayed. This explicitly invoked rehearsal can test native gameplay before the dashboard's formal transport gate is unlocked. It does not create a validation receipt or change that gate.
 
