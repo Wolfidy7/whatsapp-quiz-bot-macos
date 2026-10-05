@@ -149,6 +149,18 @@ This command posts an enrollment announcement, accepts the first incoming `!join
 
 A reply from the bot's own account, including the same account on a phone, is outgoing and cannot enroll. Incorrect, incomplete, edited or unexpected transcripts do not produce a successful validation receipt. Private evidence and write-ahead reservations remain under `data/diagnostics/`; an interrupted attempt is not automatically replayed. These are real group messages: use a dedicated group whose members expect the test.
 
+### Play a complete real rehearsal
+
+Use the normal game engine for multiple questions, intermediate scores and a final breakdown:
+
+```sh
+python -m scripts.play_rehearsal --group "Test" --players 2 --questions data/questions.json --join-seconds 180 --seconds 60
+```
+
+Open that exact group with an empty composer, stop the web service, and have the specified number of other accounts ready. Everyone must send `!join` after enrollment opens. The command refuses to start questions if the required count is missing at closure. The selected bank supplies the questions, limited by `MAX_QUESTIONS`. Players answer naturally with `!r their answer`; no predetermined reply sequence is required. Intermediate and final scores are published in WhatsApp and printed in the terminal.
+
+Defaults come from `.env`; explicit command-line overrides apply only to this session snapshot. Every run creates a fresh archived game under `data/sessions/`. Stop with Ctrl+C; interrupted games are never automatically resumed or replayed. This explicitly invoked rehearsal can test native gameplay before the dashboard's formal transport gate is unlocked. It does not create a validation receipt or change that gate.
+
 ## Scoring
 
 With `N` registered players and a correct-answer rank `r`:
@@ -217,6 +229,7 @@ Accessibility pagination remains a diagnostic fallback prototype. Its UI cells c
 | `scripts/read_messages.py` | Fast read-only message-count diagnostic and optional private export |
 | `scripts/probe_whatsapp.py` | Legacy read-only accessibility prototype |
 | `scripts/validate_transport.py` | Explicit controlled native test in Test |
+| `scripts/play_rehearsal.py` | Complete explicitly invoked native rehearsal with scores and JSON archives |
 | `scripts/validate_auto.py` | Automatic native enrollment, known-order round and first-answer scoring validation |
 | `scripts/check_coverage.py` | Exact Python line/branch quality gates |
 | `tests/` | Rules, native fakes, recovery, storage, HTTP and large-game simulations |
