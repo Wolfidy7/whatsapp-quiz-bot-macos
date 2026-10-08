@@ -34,6 +34,11 @@ Toutes les mesures ont été faites avec `jev-latest`, au seuil de 0,8. Chaque r
   - un film inventé dans la liste des pièges ;
   - des superlatifs approximatifs dans les explications.
 
+**Itération 3, 100 questions générées avec la version 2 du prompt.** Le lot est importé tel quel, sans aucune correction, et obtient **96,4 % de bonnes évaluations** (1309 sur 1358). 75 questions sur 100 ne font aucune erreur. Les erreurs restantes relèvent de deux familles, désormais traitées dans le prompt :
+
+- **Une entité liée à la réponse, mais d'une autre nature, est acceptée.** C'est le cas du lieu où se trouve la réponse (« Saint-Denis » pour le Stade de France à 0,94, « Dubaï » pour la Burj Khalifa, « Autriche » pour Salzbourg, « Catalogne » pour Barcelone), d'un membre (« John Lennon » pour les Beatles, à 0,93), d'un personnage (« Sancho Panza », « d'Artagnan ») ou d'un auteur (« Rouget de Lisle » pour La Marseillaise). Les nommer explicitement avec « au lieu de » divise ces erreurs par deux. Le lieu et le membre restent parfois juste au-dessus du seuil, entre 0,80 et 0,86.
+- **La règle du prénom seul est appliquée à tort aux personnes connues sous un seul nom.** « Dante » était refusé à 0,53. Une fois la règle retirée, il est accepté à chaque fois.
+
 Le critère vrai est aussi annoncé aux joueurs comme « la bonne réponse ». Il doit donc rester une réponse courte, et les nuances de notation vont dans le critère faux.
 
 ## Prompt
@@ -86,14 +91,21 @@ RÈGLES PAR CHAMP
 
    Les cas à couvrir, selon le type de réponse :
    a) Les confusions plausibles : cite 3 à 5 mauvaises réponses qu'un joueur pourrait vraiment donner (même catégorie, même époque, même pays, même domaine), suivies de « … », puis précise « même mal écrit(e) ». Exemple : « désigne un autre joueur (Samuel Eto'o, Didier Drogba, Roger Milla…), même mal écrit ». Ne cite que des éléments qui existent réellement, et n'invente jamais un titre, un nom ou un lieu.
-   b) Les réponses partielles insuffisantes : pour une personne, un prénom seul ne suffit jamais. Écris-le explicitement avec le prénom réel, par exemple « ne donne que le prénom « George » ».
+   b) Les réponses partielles insuffisantes : pour une personne, un prénom seul ne suffit pas. Écris-le explicitement avec le prénom réel, par exemple « ne donne que le prénom « George » ».
+      EXCEPTION : si la personne est couramment désignée par un seul nom (Dante, Michel-Ange, Raphaël, Napoléon, Molière, Voltaire, Pelé…), n'écris PAS cette règle. L'élément indispensable devient ce nom usuel, par exemple « ou ne contient pas le nom Dante ».
    c) Les catégories voisines, selon le cas :
       - une catégorie plus large ou un ensemble qui contient la réponse : « désigne une chaîne de montagnes ou une région (Himalaya, Alpes…) au lieu d'un sommet », ou « désigne la ville qui l'entoure (Rome) » ;
       - un ancien nom ou un ancien État : « URSS, Union soviétique » ;
       - un objet d'une autre nature : « désigne une étoile ou un autre astre (le Soleil, la Lune…) », « désigne une substance qui n'est pas un métal (eau, brome…) » ;
       - plusieurs réponses à la fois : « cite plusieurs océans ».
-   d) Les nombres, les années et les durées : « donne une autre année que 1789, en chiffres ou en lettres (1788, 1792, 1799, mille sept cent quatre-vingt-treize…) ». Cite toujours des valeurs proches ET au moins une écrite en lettres. Pour une durée, exclus aussi les autres unités, par exemple « exprime une durée en minutes (une minute…) ».
-   e) L'élément indispensable : termine par ce que la réponse doit absolument contenir. Pour une personne, c'est le nom de famille, par exemple « ou ne contient pas le nom Weah ». Pour un lieu, c'est son nom, par exemple « ou ne contient pas le nom Ottawa ».
+   d) Les entités LIÉES à la réponse mais d'une autre nature. C'est la cause d'erreur la plus fréquente, et elle est OBLIGATOIRE dès qu'une telle entité est connue. Formule-la toujours avec « au lieu de » :
+      - le lieu où se trouve la réponse : « désigne la ville ou le pays où il se trouve (Dubaï…) au lieu du bâtiment », « désigne la région ou le pays (Catalogne, Espagne) au lieu de la ville » ;
+      - une autre ville du pays demandé : « désigne une ville (Hô Chi Minh-Ville…) au lieu d'un pays » ;
+      - un membre d'un groupe : « désigne un membre du groupe (John Lennon, Paul McCartney…) au lieu du groupe » ;
+      - un personnage d'une œuvre : « désigne un personnage du roman (d'Artagnan, Athos…) au lieu de l'auteur » ;
+      - l'auteur ou le créateur d'une œuvre : « désigne son auteur (Rouget de Lisle) au lieu du chant ».
+   e) Les nombres, les années et les durées : « donne une autre année que 1789, en chiffres ou en lettres (1788, 1792, 1799, mille sept cent quatre-vingt-treize…) ». Cite toujours des valeurs proches ET au moins une écrite en lettres. Pour une durée, exclus aussi les autres unités, par exemple « exprime une durée en minutes (une minute…) ».
+   f) L'élément indispensable : termine par ce que la réponse doit absolument contenir. Pour une personne, c'est le nom de famille, par exemple « ou ne contient pas le nom Weah ». Pour un lieu, c'est son nom, par exemple « ou ne contient pas le nom Ottawa ».
 
    INTERDIT dans "criteria.false" :
    - Citer des formes ACCEPTÉES de la bonne réponse : orthographes proches, variantes, traductions, ou une parenthèse « (X est accepté) ». Le modèle associe au faux tout ce qui est écrit dans ce critère, et refuse alors ces formes. Les formes acceptées vont UNIQUEMENT dans "aliases".
@@ -114,7 +126,13 @@ VÉRIFICATION AVANT DE RÉPONDRE — passe chaque question en revue
 - Chaque objet contient exactement les 5 champs, et le JSON est valide : guillemets doubles, pas de virgule finale. Les guillemets internes sont des « » ou des apostrophes typographiques.
 - Aucune question ne relève d'un des cas à écarter de la section « CHOIX DES QUESTIONS ».
 - "criteria.true" est une réponse courte, sans consigne.
-- Chaque "criteria.false" commence par « La réponse est fausse si elle ». Il cite des pièges réels avec « même mal écrit », le prénom seul (pour une personne), les catégories voisines pertinentes, les valeurs en lettres (pour un nombre) et l'élément indispensable.
+- Chaque "criteria.false" commence par « La réponse est fausse si elle ». Il cite :
+  - des pièges réels, avec « même mal écrit » ;
+  - le prénom seul, pour une personne (sauf si elle est connue sous un seul nom) ;
+  - les catégories voisines pertinentes ;
+  - les entités liées (lieu, membre, personnage, auteur) avec « au lieu de » ;
+  - les valeurs en lettres, pour un nombre ;
+  - l'élément indispensable.
 - Aucun "criteria.false" ne contient de forme acceptée, de variante d'orthographe de la bonne réponse, ni de « est accepté ».
 - Chaque fait de la question, de la réponse et de l'explication est exact. En cas de doute, remplace la question.
 
