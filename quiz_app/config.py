@@ -1,12 +1,15 @@
 """Read one private .env, without modifying the shell environment."""
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from quiz_app.errors import QuizError
 from quiz_app.models import Settings
+from quiz_app.storage import locked
 
 
 def load_settings(path: Path) -> Settings:
@@ -14,13 +17,38 @@ def load_settings(path: Path) -> Settings:
     try:
         values = parse_env(path.read_text(encoding="utf-8"))
         settings = Settings.model_validate(values)
-        if settings.min_points > settings.max_points:
-            raise ValueError("MIN_POINTS must not exceed MAX_POINTS")
-        if settings.join_command.casefold() == settings.answer_prefix.casefold():
-            raise ValueError("JOIN_COMMAND and ANSWER_PREFIX must differ")
         return settings
     except (OSError, ValueError, ValidationError) as exc:
         raise QuizError("CONFIG_INVALID", str(exc)) from exc
+
+
+def save_settings(path: Path, settings: Settings) -> None:
+    """Atomically save validated defaults to the single private .env; classify storage failures."""
+    text = (
+        "\n".join(
+            f"{key.upper()}={json.dumps(value, ensure_ascii=False)}"
+            for key, value in settings.model_dump().items()
+        )
+        + "\n"
+    )
+    try:
+        with locked(path.with_suffix(".lock")):
+            fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".settings-")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    stream.write(text)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, path)
+                directory = os.open(path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+    except OSError as error:
+        raise QuizError("STORAGE_UNAVAILABLE", "Impossible d’enregistrer les paramètres") from error
 
 
 def parse_env(text: str) -> dict[str, object]:

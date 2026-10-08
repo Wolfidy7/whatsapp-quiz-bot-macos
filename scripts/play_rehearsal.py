@@ -10,30 +10,22 @@ from quiz_app.ax_reader import AXReader
 from quiz_app.ax_sender import AXSender
 from quiz_app.config import load_settings
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
-from quiz_app.engine import Engine, collect_players, display_name, marker, new_session, report
+from quiz_app.engine import Engine, display_name, new_session, report
 from quiz_app.errors import QuizError
 from quiz_app.models import Settings
 from quiz_app.repository import load_bank
 from quiz_app.storage import locked
 
 
-def check_enrollment(engine: Engine, required: int) -> None:
-    """Require the chosen player count at closure; raise before publishing any question if incomplete."""
-    if engine.session.phase != "registration" or engine.clock() < engine.session.deadline:
-        return
-    messages = engine.transport.segment(marker(engine.session, "join.0"))
-    count = len(collect_players(messages, engine.session.settings))
-    if count != required:
-        raise QuizError("ENROLLMENT_INCOMPLETE", f"Expected {required} registered players; received {count}")
-
-
 def show_state(engine: Engine) -> None:
     """Print enrolled labels, phase and confirmed per-round or final standings."""
     session = engine.session
     names = [display_name(session, key) for key in session.players]
-    print(f"{session.phase} · players: {names} · question {len(session.rounds)}", flush=True)
+    print(f"{session.phase} · Joueurs : {names} · Question {len(session.rounds)}", flush=True)
     if session.phase in ("interval", "finished"):
         print(report(session, final=session.phase == "finished"), flush=True)
+    if session.phase == "cancelled":
+        print(session.error, flush=True)
 
 
 def drive(engine: Engine) -> None:
@@ -42,7 +34,6 @@ def drive(engine: Engine) -> None:
     try:
         engine.begin()
         while engine.session.phase not in ("finished", "paused", "cancelled"):
-            check_enrollment(engine, engine.session.settings.max_players)
             engine.tick()
             state = (engine.session.phase, len(engine.session.players), len(engine.session.rounds))
             if state != previous:
@@ -75,16 +66,20 @@ def play(args: argparse.Namespace, root: Path) -> None:
         raise QuizError("CONFIG_INVALID", "Invalid rehearsal settings") from error
     bank = load_bank(args.questions or root / "data/questions.json")
     with locked(root / "data/service.lock"):
-        reader = AXReader(settings.whatsapp_group)
+        reader = AXReader(settings.whatsapp_group, require_active=False, launch=True)
         source = DatabaseReader(Path(settings.whatsapp_database), settings.whatsapp_group)
         source.recent(1)
-        transport = DatabaseTransport(source, AXSender(reader).publish)
+        sender = AXSender(reader)
+        sender.open_group()
+        transport = DatabaseTransport(source, sender.publish, root / "data/native-deliveries.json")
         session = new_session(settings, bank, "native")
+        session.rehearsal = True
         path = root / f"data/sessions/{session.id}.json"
         engine = Engine(session, transport, path, time.time)
         print(
-            f"Real rehearsal: {settings.whatsapp_group} · {settings.max_players} players · "
-            f"{len(session.questions)} questions. Archive: {session.id}",
+            f"Partie réelle : {settings.whatsapp_group} · "
+            f"{settings.nb_players_expected}–{settings.max_players} joueurs · "
+            f"{len(session.questions)} questions. Archive : {session.id}",
             flush=True,
         )
         drive(engine)

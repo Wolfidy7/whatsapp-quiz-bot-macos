@@ -16,8 +16,6 @@ def validate_questions(value: object) -> list[Question]:
         ids = [question.id for question in questions]
         if not ids or len(ids) > 1000 or len(ids) != len(set(ids)):
             raise ValueError("Question IDs must be unique; bank cannot be empty")
-        if any(not alias.strip() for question in questions for alias in question.aliases):
-            raise ValueError("Aliases cannot be blank")
         return questions
     except (ValidationError, ValueError) as exc:
         raise QuizError("BANK_INVALID", str(exc)) from exc

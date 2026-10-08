@@ -29,16 +29,20 @@ class Simulator:
     def __init__(self) -> None:
         """Create an empty chronological conversation."""
         self.messages: list[Message] = []
+        self.sequence = 0
 
     def inject(self, author: str, body: str) -> None:
         """Append a fake incoming message while keeping duplicate texts distinct."""
-        fingerprint = sha256(f"{len(self.messages)}:{author}:{body}".encode()).hexdigest()
-        self.messages.append(Message(author=author, body=body, fingerprint=fingerprint))
+        self.sequence = max(self.sequence, max((m.sequence or 0 for m in self.messages), default=0)) + 1
+        fingerprint = sha256(f"{self.sequence}:{author}:{body}".encode()).hexdigest()
+        self.messages.append(
+            Message(author=author, body=body, fingerprint=fingerprint, sequence=self.sequence)
+        )
 
     def send(self, text: str, marker: str) -> None:
         """Append an outgoing simulated message, without any native interaction."""
         self.inject("bot", text)
-        self.messages[-1] = self.messages[-1].model_copy(update={"outgoing": True})
+        self.messages[-1] = self.messages[-1].model_copy(update={"outgoing": True, "native_id": marker})
 
     def preview(self, start: str) -> list[Message] | None:
         """Return the complete current simulation window without scrolling or publication."""

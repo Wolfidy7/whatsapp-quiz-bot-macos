@@ -12,7 +12,12 @@ def verify(path: Path) -> None:
         raise SystemExit("Application line coverage must be 100%")
     if totals["covered_branches"] < 0.9 * totals["num_branches"]:
         raise SystemExit("Application branch coverage must be at least 90%")
-    for name in ("quiz_app/grading.py", "quiz_app/scoring.py"):
+    for name in (
+        "quiz_app/grading.py",
+        "quiz_app/normalization.py",
+        "quiz_app/numeric.py",
+        "quiz_app/scoring.py",
+    ):
         if report["files"][name]["summary"]["missing_branches"]:
             raise SystemExit(f"{name}: branch coverage must be 100%")
     print("Coverage gates passed: all lines, ≥90% branches, full correction/scoring branches.")

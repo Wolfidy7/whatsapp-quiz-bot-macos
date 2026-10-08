@@ -1,3 +1,4 @@
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import MagicMock,patch
 import pytest
@@ -15,14 +16,14 @@ def bridge():
     header=Node(AXIdentifier='NavigationBar_HeaderViewButton',AXDescription='Test')
     table=Node(AXIdentifier='ChatMessagesTableView',AXChildren=[heading,bubble])
     window=Node(AXChildren=[header,table])
-    app=Node(AXMainWindow=window)
+    app=Node(AXMainWindow=window,AXFrontmost=True)
     ax=MagicMock();ax.AXIsProcessTrusted.return_value=True
     ax.AXUIElementCreateApplication.return_value=app
     ax.AXUIElementCopyAttributeValue.side_effect=lambda node,name,unused:(0,node.attrs.get(name))
     ax.AXValueGetValue.return_value=(True,SimpleNamespace(y=10))
     ax.AXUIElementPerformAction.return_value=0
     cocoa=MagicMock();running=MagicMock();running.bundleIdentifier.return_value='net.whatsapp.WhatsApp'
-    cocoa.NSWorkspace.sharedWorkspace.return_value.runningApplications.return_value=[running]
+    cocoa.NSRunningApplication.runningApplicationsWithBundleIdentifier_.return_value=[running]
     cocoa.NSWorkspace.sharedWorkspace.return_value.frontmostApplication.return_value=running
     quartz=MagicMock();quartz.CGSessionCopyCurrentDictionary.return_value={'kCGSSessionOnConsoleKey':True}
     with patch('quiz_app.ax_reader.import_module',side_effect=lambda name:ax if name=='ApplicationServices' else cocoa),patch('quiz_app.scrolling.import_module',return_value=quartz):
@@ -43,7 +44,7 @@ def test_reader_init_errors(bridge):
     ax.AXIsProcessTrusted.return_value=False
     with pytest.raises(QuizError):AXReader('Test')
     ax.AXIsProcessTrusted.return_value=True
-    cocoa.NSWorkspace.sharedWorkspace.return_value.runningApplications.return_value=[]
+    cocoa.NSRunningApplication.runningApplicationsWithBundleIdentifier_.return_value=[]
     with pytest.raises(QuizError):AXReader('Test')
 
 def test_reader_safety(bridge):
@@ -158,14 +159,44 @@ def test_pixel_geometry_and_foreground(sender):
         quartz.CGEventCreateScrollWheelEvent.return_value=None
         with pytest.raises(QuizError):scroll_pixels(reader,180)
         cocoa.NSWorkspace.sharedWorkspace.return_value.frontmostApplication.return_value=None
+        app.attrs['AXFrontmost']=None
         with pytest.raises(QuizError):scroll_pixels(reader,180)
         different=MagicMock();different.processIdentifier.return_value=-1
         cocoa.NSWorkspace.sharedWorkspace.return_value.frontmostApplication.return_value=different
+        app.attrs['AXFrontmost']=False
         with pytest.raises(QuizError):scroll_pixels(reader,180)
     table.attrs['AXSize']=None
     with pytest.raises(QuizError):table_center(reader,table)
     table.attrs['AXSize']=2;size.width=0
     with pytest.raises(QuizError):table_center(reader,table)
+
+
+def test_foreground_uses_live_ax_instead_of_cached_workspace(sender):
+    from quiz_app.scrolling import ensure_foreground,require_front
+    sender,reader,(ax,cocoa,app,*_)=sender
+    workspace=cocoa.NSWorkspace.sharedWorkspace.return_value
+    workspace.frontmostApplication.return_value=None
+    ensure_foreground(reader)
+    require_front(reader)
+    workspace.frontmostApplication.assert_not_called()
+    app.attrs['AXFrontmost']=False
+    workspace.frontmostApplication.return_value=reader.running
+    with pytest.raises(QuizError):require_front(reader)
+    app.attrs['AXFrontmost']=None
+    with pytest.raises(QuizError):ensure_foreground(reader)
+
+
+def test_foreground_waits_for_confirmed_activation(sender):
+    from quiz_app.scrolling import ensure_foreground
+    sender,reader,(ax,cocoa,app,*_)=sender
+    app.attrs['AXFrontmost']=False
+    calls=[]
+    def activated(date):
+        calls.append(date)
+        if len(calls)==3:app.attrs['AXFrontmost']=True
+    with patch('quiz_app.scrolling.time.sleep',side_effect=activated):
+        ensure_foreground(reader)
+    assert len(calls)==3
 
 
 def test_raw_position(sender):
@@ -222,3 +253,179 @@ def test_directional_marks_in_native_menus(sender):
     app.attrs['AXMenuBar']=Node(AXChildren=[heading])
     sender.menu(('Chat',),('Send',))
     assert ax.AXUIElementPerformAction.call_args.args[1]=='AXCancel'
+
+
+def test_deferred_group_check_and_automatic_selection(bridge):
+    ax,cocoa,app,window,table,bubble,header=bridge
+    header.attrs['AXDescription']='Another conversation'
+    reader=AXReader('Test',require_active=False)
+    assert reader.table is None
+    sender=AXSender(reader)
+    search=Node(AXIdentifier='TokenizedSearchBar_TextView',AXValue='previous search')
+    result=Node(AXIdentifier='ChatListSearchView_ChatResult',AXDescription='Test')
+    partial=Node(AXIdentifier='ChatListSearchView_ChatResult',AXDescription='Test extra')
+    message=Node(AXIdentifier='Other',AXDescription='Test')
+    draft=Node(AXIdentifier='ChatBar_ComposerTextView',AXValue='Keep my draft')
+    window.attrs['AXChildren'] += [search,partial,message,draft]
+    def reveal(seconds):
+        if seconds==0.2 and result not in window.attrs['AXChildren']:
+            window.attrs['AXChildren'].append(result)
+    def select(node,action):
+        assert node is result and action=='AXPress'
+        header.attrs['AXDescription']='Test'
+        return 0
+    ax.AXUIElementPerformAction.side_effect=select
+    with patch.object(sender,'paste') as paste,patch('quiz_app.ax_sender.time.sleep',side_effect=reveal):
+        sender.open_group()
+        paste.assert_called_once_with(search,'Test',replace=True)
+    assert reader.table is table
+    assert draft.attrs['AXValue']=='Keep my draft'
+    with patch.object(sender,'paste'),patch('quiz_app.ax_sender.time.sleep'),patch('quiz_app.ax_sender.click_control'):
+        with pytest.raises(QuizError,match='existing draft'):sender.publish('message','marker')
+
+
+def test_group_search_rejects_missing_duplicate_and_wrong_header(sender):
+    sender,reader,(ax,cocoa,app,window,table,bubble,header)=sender
+    search=Node(AXIdentifier='TokenizedSearchBar_TextView',AXValue='')
+    window.attrs['AXChildren'].append(search)
+    with patch.object(sender,'paste'),patch('quiz_app.ax_sender.time.sleep'),patch.object(sender,'press') as press:
+        with pytest.raises(QuizError,match='exactly one'):sender.open_group()
+        press.assert_not_called()
+        result=Node(AXIdentifier='ChatListSearchView_ChatResult',AXDescription='Test')
+        window.attrs['AXChildren'] += [result,Node(**result.attrs)]
+        with pytest.raises(QuizError,match='exactly one'):sender.open_group()
+        press.assert_not_called()
+        window.attrs['AXChildren'].pop()
+        header.attrs['AXDescription']='Wrong'
+        with pytest.raises(QuizError,match='exact requested'):sender.open_group()
+        press.assert_called_once_with(result)
+        window.attrs['AXModal']=True
+        with pytest.raises(QuizError,match='dialog'):sender.window_nodes()
+        app.attrs['AXMainWindow']=None
+        with pytest.raises(QuizError,match='unavailable'):sender.open_group()
+
+
+def test_search_paste_replaces_only_focused_field(sender):
+    sender,reader,(ax,cocoa,app,*_)=sender
+    search=Node(AXValue='old query');app.attrs['AXFocusedUIElement']=search
+    board=cocoa.NSPasteboard.generalPasteboard.return_value
+    board.pasteboardItems.return_value=[]
+    def edit(headings,entries):
+        if 'Paste' in entries:search.attrs['AXValue']='Test'
+    with patch.object(sender,'menu',side_effect=edit) as menu,patch('quiz_app.ax_sender.time.sleep'):
+        sender.paste(search,'Test',replace=True)
+        assert menu.call_args_list[0].args[1]==('Select All','Tout sélectionner','Sélectionner tout')
+        search.attrs['AXValue']=''
+        menu.reset_mock()
+        sender.paste(search,'Test',replace=True)
+        assert menu.call_count==1
+        def lose_focus(*args):app.attrs['AXFocusedUIElement']=None
+        menu.side_effect=lose_focus
+        with pytest.raises(QuizError,match='lost focus'):sender.paste(search,'Test',replace=True)
+
+
+def test_launch_attaches_after_delayed_process_and_window(bridge):
+    ax,cocoa,app,window,*_=bridge
+    lookup=cocoa.NSRunningApplication.runningApplicationsWithBundleIdentifier_
+    running=lookup.return_value[0]
+    lookup.side_effect=[[],[],[running]]
+    app.attrs['AXMainWindow']=None
+    sleeps=[]
+    def ready(seconds):
+        sleeps.append(seconds)
+        if len(sleeps)==3:app.attrs['AXMainWindow']=window
+    with patch('quiz_app.ax_reader.subprocess.run') as launch,patch('quiz_app.ax_reader.time.sleep',side_effect=ready):
+        reader=AXReader('Test',require_active=False,launch=True)
+    assert reader.running is running
+    assert launch.call_args.args[0]==['/usr/bin/open','-b','net.whatsapp.WhatsApp']
+    assert launch.call_args.kwargs=={'check':True,'timeout':10,'capture_output':True}
+    assert sleeps==[0.2,0.1,0.2]
+
+
+def test_launch_keeps_existing_ready_process(bridge):
+    with patch('quiz_app.ax_reader.subprocess.run') as launch,patch('quiz_app.ax_reader.time.sleep'):
+        reader=AXReader('Test',launch=True)
+        assert reader.page()[0].author=='Camille'
+        launch.assert_not_called()
+
+
+def test_process_lookup_ignores_stale_workspace_and_finds_restarted_app(bridge):
+    ax,cocoa,*_=bridge
+    lookup=cocoa.NSRunningApplication.runningApplicationsWithBundleIdentifier_
+    original=lookup.return_value[0]
+    replacement=MagicMock()
+    replacement.processIdentifier.return_value=54321
+    workspace=cocoa.NSWorkspace.sharedWorkspace.return_value
+    workspace.runningApplications.return_value=[]
+    lookup.side_effect=[[original],[replacement]]
+    assert AXReader('Test',require_active=False).running is original
+    assert AXReader('Test',require_active=False).running is replacement
+    workspace.runningApplications.assert_not_called()
+    assert lookup.call_count==2
+    lookup.assert_called_with('net.whatsapp.WhatsApp')
+
+
+def test_reopen_closed_window(bridge):
+    ax,cocoa,app,window,*_=bridge
+    app.attrs['AXMainWindow']=None
+    def opened(*args,**kwargs):app.attrs['AXMainWindow']=window
+    with patch('quiz_app.ax_reader.subprocess.run',side_effect=opened) as launch,patch('quiz_app.ax_reader.time.sleep'):
+        reader=AXReader('Test',launch=True)
+        assert reader.table is not None
+        launch.assert_called_once()
+
+
+@pytest.mark.parametrize('error', [OSError('missing launcher'),subprocess.CalledProcessError(1,['open']),subprocess.TimeoutExpired(['open'],10)])
+def test_launch_errors_classified(bridge,error):
+    lookup=bridge[1].NSRunningApplication.runningApplicationsWithBundleIdentifier_
+    lookup.return_value=[]
+    with patch('quiz_app.ax_reader.subprocess.run',side_effect=error),patch('quiz_app.ax_reader.time.sleep'):
+        with pytest.raises(QuizError,match='Could not launch') as failure:
+            AXReader('Test',require_active=False,launch=True)
+        assert failure.value.code=='WHATSAPP_UNAVAILABLE'
+
+
+def test_launch_timeouts_and_ambiguous_processes(bridge):
+    ax,cocoa,app,window,*_=bridge
+    lookup=cocoa.NSRunningApplication.runningApplicationsWithBundleIdentifier_
+    running=lookup.return_value[0]
+    with patch('quiz_app.ax_reader.subprocess.run') as launch,patch('quiz_app.ax_reader.time.sleep'):
+        lookup.return_value=[]
+        with pytest.raises(QuizError,match='process unavailable'):AXReader('Test',launch=True)
+        assert launch.call_count==1
+        lookup.return_value=[running,running]
+        with pytest.raises(QuizError,match='ambiguous'):AXReader('Test',launch=True)
+        assert launch.call_count==1
+        lookup.return_value=[running]
+        app.attrs['AXMainWindow']=None
+        with pytest.raises(QuizError,match='did not become accessible'):AXReader('Test',launch=True)
+
+
+def test_launch_checks_permissions_and_locked_session_before_open(bridge):
+    ax,cocoa,*_=bridge
+    cocoa.NSRunningApplication.runningApplicationsWithBundleIdentifier_.return_value=[]
+    with patch('quiz_app.ax_reader.subprocess.run') as launch,patch('quiz_app.ax_reader.time.sleep'):
+        ax.AXIsProcessTrusted.return_value=False
+        with pytest.raises(QuizError,match='Accessibility'):AXReader('Test',launch=True)
+        ax.AXIsProcessTrusted.return_value=True
+        quartz=MagicMock();quartz.CGSessionCopyCurrentDictionary.return_value={'CGSSessionScreenIsLocked':True}
+        with patch('quiz_app.scrolling.import_module',return_value=quartz):
+            with pytest.raises(QuizError,match='unlocked'):AXReader('Test',launch=True)
+        launch.assert_not_called()
+
+
+def test_operator_stop_prevents_native_send_at_each_guard(sender):
+    sender,reader,(ax,cocoa,app,window,*_)=sender
+    sender.cancel_requested=lambda:True
+    with pytest.raises(QuizError,match='Arrêt'):sender.open_group()
+    with pytest.raises(QuizError,match='Arrêt'):sender.publish('Message','private')
+    composer=Node(AXIdentifier='ChatBar_ComposerTextView',AXValue='')
+    button=Node(AXIdentifier='ChatBar_SendButton',AXEnabled=True)
+    window.attrs['AXChildren'] += [composer,button]
+    with patch.object(sender,'paste') as paste,patch('quiz_app.ax_sender.click_control') as click,patch('quiz_app.ax_sender.time.sleep'):
+        calls=iter([False,True]);sender.cancel_requested=lambda:next(calls)
+        with pytest.raises(QuizError,match='Arrêt'):sender.publish('Message','private')
+        paste.assert_not_called();click.assert_not_called()
+        calls=iter([False,False,True]);sender.cancel_requested=lambda:next(calls)
+        with pytest.raises(QuizError,match='Arrêt'):sender.publish('Message','private')
+        paste.assert_called_once();click.assert_not_called()

@@ -12,6 +12,7 @@ from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.engine import correct_round
 from quiz_app.errors import QuizError
 from quiz_app.history import reconcile
+from quiz_app.messages import STOP
 from quiz_app.models import Message, Question, Round, Settings
 from quiz_app.storage import locked, write_json
 from quiz_app.transport import Transport
@@ -84,10 +85,12 @@ def validate(group: str, join_seconds: int, seconds: int, root: Path) -> None:
         raise QuizError("VALIDATION_INVALID", "Provide a group and bounded enrollment/answer durations")
     with locked(root / "data/service.lock"):
         settings = load_settings(root / ".env")
-        reader = AXReader(group)
+        reader = AXReader(group, require_active=False, launch=True)
         source = DatabaseReader(Path(settings.whatsapp_database), group)
         source.recent(1)
-        transport = DatabaseTransport(source, AXSender(reader).publish)
+        sender = AXSender(reader)
+        sender.open_group()
+        transport = DatabaseTransport(source, sender.publish, root / "data/native-deliveries.json")
         (root / "data/transport-validation.json").unlink(missing_ok=True)
         run_round(transport, group, settings, join_seconds, seconds, root)
 
@@ -107,13 +110,18 @@ def run_round(
     dispatches: list[dict[str, str]] = []
     publish_reserved(
         transport,
-        f"Test du quiz : un autre membre peut envoyer {settings.join_command} "
-        f"dans les {join_seconds} secondes pour participer. Un seul joueur pour ce test.\n{join}",
+        f"🧪 *TEST DU QUIZ — INSCRIPTIONS*\n\n"
+        f"Un autre membre peut envoyer *{settings.join_command}* pour participer.\n"
+        f"⏳ Inscriptions ouvertes pendant *{join_seconds} s*.\n\n"
+        "_Un seul joueur pour ce test._",
         join,
         path,
         dispatches,
     )
-    print(f"Enrollment posted in {group}. Waiting for another account's {settings.join_command}…", flush=True)
+    print(
+        f"Inscriptions ouvertes dans {group}. En attente du {settings.join_command} d’un autre compte…",
+        flush=True,
+    )
     continue_round(transport, group, settings, join_seconds, seconds, root, label, dispatches)
 
 
@@ -131,22 +139,22 @@ def continue_round(
     join, closed, start = [f"{label}:{name}]" for name in ("join", "closed", "question")]
     path = root / f"data/diagnostics/auto-{label[12:]}.json"
     player = wait_for_join(transport, join, settings.join_command, join_seconds)
-    publish_reserved(transport, f"Inscription du test fermée.\n{closed}", closed, path, dispatches)
+    publish_reserved(transport, "🔒 *INSCRIPTION DU TEST TERMINÉE*", closed, path, dispatches)
     enrollment = transport.segment(join, closed)
     if first_join(enrollment, settings.join_command) != player:
         raise QuizError("HISTORY_CHANGED", "Enrollment changed before its closing marker")
-    print(f"Enrolled automatically: {player.author}. Posting the question.", flush=True)
+    print(f"Joueur inscrit automatiquement : {player.author}. Envoi de la question.", flush=True)
     replies = " → ".join(f"{settings.answer_prefix} {answer}" for answer in ("Paris", "Londres", "Paris"))
     publish_reserved(
         transport,
-        f"Question de test : quelle est la capitale de la France ?\n"
-        f"Le joueur inscrit doit envoyer trois messages séparés, dans cet ordre :\n{replies}\n"
-        f"Délai : {seconds} secondes. Seule la première réponse compte pour le score.\n{start}",
+        f"🧠 *QUESTION DE TEST*\n\nQuelle est la capitale de la France ?\n\n"
+        f"Le joueur inscrit doit envoyer trois messages séparés, dans cet ordre :\n*{replies}*\n\n"
+        f"⏱️ Délai : *{seconds} s*.\n_Seule la première réponse compte pour le score._",
         start,
         path,
         dispatches,
     )
-    print(f"Question posted. Send the three replies within {seconds}s.", flush=True)
+    print(f"Question envoyée. Envoyez les trois réponses sous {seconds} s.", flush=True)
     complete_answers(transport, group, settings, seconds, root, label, dispatches, player)
 
 
@@ -164,7 +172,7 @@ def complete_answers(
     start, stop, result = [f"{label}:{name}]" for name in ("question", "stop", "result")]
     path = root / f"data/diagnostics/auto-{label[12:]}.json"
     observed = observe_window(transport, start, seconds)
-    publish_reserved(transport, f"STOP\n{stop}", stop, path, dispatches)
+    publish_reserved(transport, STOP, stop, path, dispatches)
     messages = reconcile(observed, transport.segment(start, stop))
     evidence = root / f"data/diagnostics/auto-{label[12:]}-evidence.json"
     write_json(
@@ -189,15 +197,15 @@ def complete_answers(
     )
     publish_reserved(
         transport,
-        f"Réponse : Paris.\nTest validé : 3 messages lus dans l’ordre, "
+        f"✅ *RÉPONSE : PARIS*\n\n🧪 *TEST VALIDÉ*\n3 messages lus dans l’ordre, "
         f"auteur identifié automatiquement. Première réponse retenue : Paris.\n"
-        f"Score du joueur inscrit : {points} points.\n{result}",
+        f"\n🏅 Score du joueur inscrit : *{points} points*.",
         result,
         path,
         dispatches,
     )
     write_json(root / "data/transport-validation.json", {"group": group, "validated": True, "schema": 2})
-    print(f"Controlled native round validated. Evidence: {evidence.name}", flush=True)
+    print(f"Manche de test validée. Rapport : {evidence.name}", flush=True)
 
 
 def main() -> None:

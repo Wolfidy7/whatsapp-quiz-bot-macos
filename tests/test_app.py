@@ -25,7 +25,7 @@ def test_api(root):
         bank=client.get('/api/questions').json()
         assert client.put('/api/questions',json=bank).status_code==200
         assert client.put('/api/questions',json=[]).status_code==409
-        assert client.post('/api/test-answer',json={'question':bank[0],'answer':'PARIS'}).json()=={'accepted':True,'alias':'Paris'}
+        assert client.post('/api/test-answer',json={'question':bank[0],'answer':'PARIS'}).json()=={'accepted':True,'alias':'Paris','reason':'Correspondance exacte après normalisation.'}
         assert client.post('/api/start',json={'mode':'native','question_ids':['capital']}).status_code==409
         assert client.post('/api/start',json={'mode':'simulation','question_ids':['missing']}).status_code==409
         assert client.post('/api/start',json={'mode':'simulation','question_ids':['capital','capital']}).status_code==409
@@ -105,3 +105,117 @@ def test_payload_lock_and_storage_failure(root):
         controller.tick()
     assert controller.state()['phase']=='paused'
     assert 'STORAGE_UNAVAILABLE' in controller.state()['error']
+
+
+def test_dashboard_automatic_cancellation_and_new_game(root):
+    env=root/'.env';env.write_text(env.read_text().replace('NB_PLAYERS_EXPECTED=1','NB_PLAYERS_EXPECTED=2'))
+    app=create_app(root,background=False)
+    with TestClient(app) as client:
+        assert client.get('/api/settings').json()['nb_players_expected']==2
+        session=client.post('/api/start',json={'mode':'simulation','question_ids':['capital']}).json()
+        assert session['settings']['nb_players_expected']==2
+        client.post('/api/inject',json={'author':'Camille','body':'!join'})
+        controller=app.state.controller
+        controller.engine.clock=lambda:session['deadline']
+        controller.tick()
+        state=client.get('/api/session').json()
+        assert state['phase']=='cancelled' and state['rounds']==[]
+        assert 'ENROLLMENT_INCOMPLETE' in state['error']
+        assert client.post('/api/start',json={'mode':'simulation','question_ids':['capital']}).status_code==200
+
+
+def test_web_settings_snapshot_and_live_scores(root):
+    from quiz_app.config import load_settings
+    app=create_app(root,background=False)
+    with TestClient(app) as client:
+        defaults=client.get('/api/settings').json();defaults.update(nb_players_expected=2,max_players=5,question_seconds=10)
+        assert client.put('/api/settings',json=defaults).status_code==200
+        assert load_settings(root/'.env').nb_players_expected==2
+        bad=dict(defaults,nb_players_expected=6)
+        assert client.put('/api/settings',json=bad).status_code==422
+        assert client.put('/api/settings',json=dict(defaults,unexpected='bad')).status_code==422
+        accented={'id':'accent','question':'Un mot ?','answer':'Été'}
+        trial={'question':accented,'answer':'ete','ignore_accents':False}
+        assert client.post('/api/test-answer',json=trial).json()['accepted'] is False
+        trial['ignore_accents']=True
+        assert client.post('/api/test-answer',json=trial).json()['accepted'] is True
+        session=client.post('/api/start',json={'mode':'simulation','question_ids':['capital'],'settings':defaults}).json()
+        controller=app.state.controller
+        client.post('/api/inject',json={'author':'Camille','body':'!join'})
+        client.post('/api/inject',json={'author':'Robin','body':'!join'})
+        controller.engine.clock=lambda:controller.engine.session.deadline
+        controller.tick()
+        controller.engine.clock=lambda:controller.engine.session.deadline-1
+        state=client.post('/api/inject',json={'author':'Camille','body':'!r Paris'}).json()
+        assert state['live']['provisional'] is True
+        assert state['live']['ranking'][0]['points']==100
+        assert state['live']['ranking'][0]['confirmed_points']==0
+        assert controller.engine.session.rounds[-1].results==[]
+        state=client.post('/api/inject',json={'author':'Robin','body':'!r Paris'}).json()
+        assert [r['points'] for r in state['live']['ranking']]==[100,20]
+        client.put('/api/settings',json=dict(defaults,question_seconds=99))
+        assert client.get('/api/session').json()['settings']['question_seconds']==10
+        controller.engine.clock=lambda:controller.engine.session.deadline
+        controller.tick()
+        state=client.get('/api/session').json()
+        assert state['live']['provisional'] is False
+        assert [r['confirmed_points'] for r in state['live']['ranking']]==[100,20]
+        assert client.post('/api/cancel').json()['phase']=='cancelled'
+
+
+def test_stop_signals_while_whatsapp_work_owns_lock(root):
+    from threading import Thread,Event
+    controller=Controller(root)
+    controller.start(StartRequest(mode='simulation',question_ids=['capital']))
+    entered=Event();released=Event()
+    def work():
+        with controller.lock:
+            entered.set();released.wait(3)
+    worker=Thread(target=work);worker.start();assert entered.wait(1)
+    try:
+        assert controller.cancel()=={'stop_requested':True}
+        assert controller.stop_requested.is_set()
+    finally:released.set();worker.join(3)
+    controller.tick();assert controller.state()['phase']=='cancelled'
+    with patch.object(controller.engine,'save') as save:
+        controller.tick();controller.tick()
+        save.assert_not_called()
+
+
+def test_real_rehearsal_is_explicit_and_recovery_keeps_mode(root):
+    from quiz_app.transport import Simulator
+    controller=Controller(root)
+    with patch('quiz_app.app.AXReader'),patch('quiz_app.app.AXSender'),patch('quiz_app.app.DatabaseReader'),patch('quiz_app.app.DatabaseTransport',return_value=Simulator()):
+        state=controller.start(StartRequest(mode='native',question_ids=['capital'],rehearsal=True))
+        assert state['rehearsal'] is True
+        controller.cancel();controller.engine=None
+        assert controller.recover(state['id'])['phase']=='paused'
+        assert not (root/'data/transport-validation.json').exists()
+    with patch.object(controller,'initialize',side_effect=QuizError('GAME_CANCELLED','Arrêt')):
+        controller.engine=None
+        assert controller.start(StartRequest(mode='simulation',question_ids=['capital']))['phase']=='cancelled'
+
+
+def test_simulation_recovery_keeps_deleted_first_reply_and_sequence(root):
+    controller=Controller(root)
+    controller.start(StartRequest(mode='simulation',question_ids=['capital']))
+    controller.inject(Injection(author='Camille',body='!join'))
+    controller.engine.clock=lambda:controller.engine.session.deadline
+    controller.tick()
+    controller.engine.clock=lambda:controller.engine.session.deadline-1
+    controller.inject(Injection(author='Camille',body='!r Paris'))
+    deleted=controller.engine.transport.messages.pop()
+    controller.engine.save()
+    session_id=controller.engine.session.id
+    controller.engine=None
+    controller.recover(session_id)
+    assert controller.engine.transport.sequence>=deleted.sequence
+    controller.engine.clock=lambda:controller.engine.session.deadline-1
+    controller.resume()
+    controller.inject(Injection(author='Camille',body='!r London'))
+    assert controller.engine.session.phase=='answering'
+    assert controller.engine.transport.messages[-1].sequence>deleted.sequence
+    controller.engine.clock=lambda:controller.engine.session.deadline
+    controller.tick()
+    assert controller.engine.session.rounds[0].results[0].answer=='Paris'
+    assert controller.engine.session.rounds[0].results[0].points==100

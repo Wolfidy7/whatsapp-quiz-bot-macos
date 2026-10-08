@@ -259,6 +259,7 @@ input,
 textarea,
 select {
   min-width: 0;
+  scroll-margin-top: 160px;
 }
 header {
   gap: 12px;
@@ -289,3 +290,29 @@ button,
     font-size: 20px;
   }
 }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 16px; }
+.form-field { min-width: 0; }
+.form-field.wide { grid-column: 1 / -1; }
+.form-field input[type="checkbox"] { width: 20px; height: 20px; margin-right: 8px; vertical-align: middle; }
+.question-list { display: grid; gap: 8px; max-height: 250px; overflow: auto; }
+.question-option { display: flex; align-items: flex-start; gap: 10px; padding: 10px; background: #f5f7f2; border-radius: 8px; margin: 0; min-height: 44px; }
+.question-option input { width: 18px; height: 18px; flex: 0 0 auto; }
+.question-option span { overflow-wrap: anywhere; }
+.participants { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.participants li { border-radius: 16px; background: #f2f6ee; padding: 8px 12px; font-size: 13px; overflow-wrap: anywhere; }
+.ranking-row { display: grid; grid-template-columns: 32px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #edf0e9; }
+.ranking-row .player-name { font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.ranking-row .points { font-size: 18px; font-weight: 750; white-space: nowrap; }
+.ranking-row .response { font-size: 11px; color: #6c7e72; margin-top: 4px; }
+.game-actions { margin: 22px 0; }
+.game-actions button { flex: 1; font-size: 14px; }
+button:focus-visible, summary:focus-visible, .file-button:focus-within { outline: 3px solid #a3c1a7; outline-offset: 3px; }
+button:disabled { cursor: not-allowed; }
+[hidden] { display: none !important; }
+@media (max-width: 440px) { .form-grid { grid-template-columns: minmax(0,1fr); } .ranking-row { gap: 8px; } }
+header { position: sticky; top: 0; z-index: 10; background: #f8faf4f2; backdrop-filter: blur(12px); }
+.header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.columns { align-items: start; }
+input, button, summary, .card { scroll-margin-top: 150px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

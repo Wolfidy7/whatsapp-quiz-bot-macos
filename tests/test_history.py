@@ -118,11 +118,43 @@ def test_unrelated_edits_do_not_change_quiz_attempts():
     extra=Message(author='Robin',author_id='two',body='!r Paris',fingerprint='message-two')
     assert reconcile_game([old],[new,extra],'!join','!r')==[old,extra]
     assert new.body=='corrected' # the source observation is not mutated
-    for changed in [{'body':'!join'},{'body':'!r Paris'},{'author_id':'different'},{'fingerprint':'different'}]:
-        with pytest.raises(QuizError):reconcile_game([old],[old.model_copy(update=changed)],'!join','!r')
+    for body in ['!join','!r Paris']:
+        assert reconcile_game([old],[old.model_copy(update={'body':body})],'!join','!r')==[old]
+    with pytest.raises(QuizError):reconcile_game([old],[old.model_copy(update={'author_id':'different'})],'!join','!r')
     for command in ['!join','!r Paris']:
         answer=old.model_copy(update={'body':command})
-        with pytest.raises(QuizError):reconcile_game([answer],[answer.model_copy(update={'body':'corrected'})],'!join','!r')
+        assert reconcile_game([answer],[answer.model_copy(update={'body':'corrected'})],'!join','!r')==[answer]
     sent=old.model_copy(update={'outgoing':True})
-    with pytest.raises(QuizError):reconcile_game([sent],[sent.model_copy(update={'body':'changed'})],'!join','!r')
-    with pytest.raises(QuizError):reconcile_game([old],[],'!join','!r')
+    assert reconcile_game([sent],[sent.model_copy(update={'body':'changed'})],'!join','!r')==[sent]
+    assert reconcile_game([old],[],'!join','!r')==[old]
+
+
+def test_deleted_and_new_observations_keep_native_order():
+    from quiz_app.history import reconcile_game
+    first=message(1,'!r Paris').model_copy(update={'sequence':10})
+    second=message(2,'!r London').model_copy(update={'sequence':30})
+    earlier=message(3,'!r Rome').model_copy(update={'sequence':20})
+    deleted=second.model_copy(update={'body':'','author_id':'lost'})
+    assert reconcile_game([first,second],[earlier,deleted],'!join','!r')==[first,earlier,second]
+    assert reconcile_game([first,second],[],'!join','!r')==[first,second]
+    for current in ([second,first],[first,first],[first.model_copy(update={'sequence':11})]):
+        with pytest.raises(QuizError):reconcile_game([first,second],current,'!join','!r')
+    tied=earlier.model_copy(update={'sequence':10})
+    with pytest.raises(QuizError):reconcile_game([first],[tied],'!join','!r')
+    with pytest.raises(QuizError):reconcile_game([first,first],[],'!join','!r')
+    legacy=first.model_copy(update={'sequence':None})
+    assert reconcile_game([legacy],[first],'!join','!r')==[first]
+    blank=message(9,' ')
+    assert reconcile_game([blank],[blank],'!join','!r')==[]
+
+
+def test_private_boundaries_keep_identical_public_messages_distinct():
+    q1=message(1,'Question',True).model_copy(update={'native_id':'round-one'})
+    s1=message(2,'STOP',True).model_copy(update={'native_id':'stop-one'})
+    q2=message(3,'Question',True).model_copy(update={'native_id':'round-two'})
+    answer=message(4,'!r Paris')
+    s2=message(5,'STOP',True).model_copy(update={'native_id':'stop-two'})
+    rows=[q1,s1,q2,answer,s2]
+    assert window(rows,'round-one','stop-one')==[]
+    assert window(rows,'round-two','stop-two')==[answer]
+    with pytest.raises(QuizError):window(rows,'round-one','missing-stop')

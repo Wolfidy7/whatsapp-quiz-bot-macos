@@ -10,6 +10,7 @@ from quiz_app.ax_sender import AXSender
 from quiz_app.config import load_settings
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.errors import QuizError
+from quiz_app.messages import STOP
 from quiz_app.storage import locked, read_json, write_json
 
 
@@ -25,24 +26,26 @@ def run_validation(expected_path: Path, seconds: int, root: Path) -> None:
     if not valid_fixture(expected) or not 10 <= seconds <= 60:
         raise QuizError("VALIDATION_INVALID", "Provide at least three known replies as author/body objects")
     (root / "data/transport-validation.json").unlink(missing_ok=True)
-    reader = AXReader("Test")
+    reader = AXReader("Test", require_active=False, launch=True)
     source = DatabaseReader(Path(load_settings(root / ".env").whatsapp_database), "Test")
     source.recent(1)
-    transport = DatabaseTransport(source, AXSender(reader).publish)
+    sender = AXSender(reader)
+    sender.open_group()
+    transport = DatabaseTransport(source, sender.publish, root / "data/native-deliveries.json")
     id_ = uuid4().hex
     start, stop = f"[validation:{id_}:question]", f"[validation:{id_}:stop]"
     path = root / f"data/diagnostics/validation-{id_}.json"
     dispatches: list[dict[str, str]] = []
     publish_reserved(
         transport,
-        f"Transport validation: reply in the agreed order within {seconds}s.\n{start}",
+        f"🧪 *TEST DU QUIZ*\n\nEnvoyez les réponses dans l’ordre convenu.\n⏳ Délai : *{seconds} s*.",
         start,
         path,
         dispatches,
     )
-    print("Question sent in Test. Waiting for the known replies…", flush=True)
+    print("Question envoyée dans Test. En attente des réponses convenues…", flush=True)
     time.sleep(seconds)
-    publish_reserved(transport, f"STOP\n{stop}", stop, path, dispatches)
+    publish_reserved(transport, STOP, stop, path, dispatches)
     messages = transport.segment(start, stop)
     incoming = [
         {"author": message.author, "body": message.body} for message in messages if not message.outgoing
@@ -52,7 +55,7 @@ def run_validation(expected_path: Path, seconds: int, root: Path) -> None:
             "VALIDATION_FAILED", "Incoming authors, replies or order differ from the agreed fixture"
         )
     write_json(root / "data/transport-validation.json", {"group": "Test", "validated": True, "schema": 2})
-    print("Complete controlled native window validated for Test.")
+    print("Lecture complète de la manche validée dans Test.")
 
 
 def valid_fixture(value: object) -> bool:

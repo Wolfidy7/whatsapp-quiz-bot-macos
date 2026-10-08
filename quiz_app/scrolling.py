@@ -7,22 +7,29 @@ from typing import Any
 from quiz_app.errors import QuizError
 
 
-def ensure_foreground(reader: Any) -> None:
-    """Require an unlocked console session and the intended WhatsApp process in front."""
+def require_unlocked() -> None:
+    """Require an unlocked local console; raise SESSION_LOCKED before native interaction."""
     quartz = import_module("Quartz")
     session = quartz.CGSessionCopyCurrentDictionary()
     if not session or session.get("CGSSessionScreenIsLocked") or not session.get("kCGSSessionOnConsoleKey"):
         raise QuizError("SESSION_LOCKED", "The macOS console session must be unlocked")
+
+
+def ensure_foreground(reader: Any) -> None:
+    """Activate WhatsApp and await live AX confirmation; reject locked or unavailable sessions."""
+    require_unlocked()
     reader.running.activateWithOptions_(reader.cocoa.NSApplicationActivateIgnoringOtherApps)
-    time.sleep(0.1)
+    for _ in range(20):
+        time.sleep(0.1)
+        if reader.attr(reader.app, "AXFrontmost") is True:
+            return
     require_front(reader)
 
 
 def require_front(reader: Any) -> None:
-    """Check the foreground PID before posting a native event; fail on focus changes."""
-    front = reader.cocoa.NSWorkspace.sharedWorkspace().frontmostApplication()
-    if front is None or front.processIdentifier() != reader.running.processIdentifier():
-        raise QuizError("UI_UNAVAILABLE", "WhatsApp must be in the foreground")
+    """Read the target application's live AX foreground flag before each native event."""
+    if reader.attr(reader.app, "AXFrontmost") is not True:
+        raise QuizError("UI_UNAVAILABLE", "WhatsApp n’est pas au premier plan ; l’action a été interrompue")
 
 
 def click_control(reader: Any, node: Any) -> None:

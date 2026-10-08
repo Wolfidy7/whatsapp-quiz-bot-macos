@@ -2,11 +2,23 @@
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 
 from quiz_app.errors import QuizError
-from quiz_app.grading import extract_answer, match_answer
+from quiz_app.grading import evaluate_answer, extract_answer
 from quiz_app.history import reconcile_game
+from quiz_app.messages import (
+    REGISTRATION_CLOSED,
+    STOP,
+    cancellation,
+    next_question_delay,
+    question_prompt,
+    registration,
+    score_line,
+    scoreboard,
+    solution,
+)
 from quiz_app.models import Dispatch, Message, Question, Result, Round, Session, Settings
 from quiz_app.scoring import points_for_rank, standings
 from quiz_app.storage import write_json
@@ -14,7 +26,7 @@ from quiz_app.transport import Simulator, Transport
 
 
 def marker(session: Session, suffix: str) -> str:
-    """Return an exact session-scoped visible boundary label."""
+    """Return a private session-scoped correlation key for an outgoing boundary."""
     return f"[quiz:{session.id}:{suffix}]"
 
 
@@ -34,10 +46,10 @@ def registration_names(messages: list[Message], players: list[str], command: str
 
 
 def display_name(session: Session, key: str) -> str:
-    """Display frozen labels, disambiguating identical names with stable short suffixes."""
+    """Display frozen labels, distinguishing identical names with their enrollment numbers."""
     name = session.player_names.get(key, key)
     duplicate = list(session.player_names.values()).count(name) > 1
-    return f"{name} [{key[-4:]}]" if duplicate else name
+    return f"{name} (joueur {list(session.player_names).index(key) + 1})" if duplicate else name
 
 
 def collect_players(messages: list[Message], settings: Settings) -> list[str]:
@@ -75,7 +87,8 @@ def grade_answers(
     results: dict[str, Result] = {}
     rank = 0
     for player, answer in first.items():
-        accepted, alias = match_answer(question, answer, settings.ignore_accents)
+        verdict = evaluate_answer(question, answer, settings.ignore_accents)
+        accepted, alias = verdict.accepted, verdict.alias
         rank += int(accepted)
         points = (
             points_for_rank(rank, len(players), settings.max_points, settings.min_points) if accepted else 0
@@ -85,47 +98,77 @@ def grade_answers(
             answer=answer,
             accepted=accepted,
             alias=alias,
+            reason=verdict.reason,
             rank=rank if accepted else None,
             points=points,
         )
     return [results.get(player, Result(player=player)) for player in players]
 
 
+def split_position(text: str, limit: int) -> int:
+    """Prefer a complete paragraph or line within the limit; hard-cut oversized individual lines."""
+    for separator in ("\n\n", "\n"):
+        position = text.rfind(separator, 0, limit)
+        if position > 0:
+            return position + len(separator)
+    return limit
+
+
 def split_message(text: str, limit: int) -> list[str]:
-    """Split long reports without dropping characters; reserve room for send markers."""
-    return [text[index : index + limit] for index in range(0, len(text), limit)] or [""]
+    """Split long reports at layout boundaries where possible, preserving every character."""
+    if limit < 1:
+        raise ValueError("Message limit must be positive")
+    chunks = []
+    while len(text) > limit:
+        position = split_position(text, limit)
+        chunks.append(text[:position])
+        text = text[position:]
+    return [*chunks, text]
 
 
 def player_details(player: str, rounds: list[list[Result]]) -> str:
     """Return one player's points per completed question in question order."""
-    return " / ".join(
-        str(next(result.points for result in results if result.player == player)) for results in rounds
+    return " · ".join(
+        f"Q{index}: {next(result.points for result in results if result.player == player)} pts"
+        for index, results in enumerate(rounds, 1)
     )
 
 
 def report(session: Session, final: bool = False) -> str:
     """Build an ordered scoreboard and optional complete per-question breakdown."""
     rounds = [round_.results for round_ in session.rounds]
-    lines = ["Final results" if final else "Current standings"]
+    lines = []
     for row in standings(session.players, rounds):
         player = str(row["player"])
         details = player_details(player, rounds)
-        suffix = f" (by question: {details})" if final else ""
-        lines.append(f"{row['rank']}. {display_name(session, player)}: {row['points']} points{suffix}")
-    return "\n".join(lines)
+        lines.append(
+            score_line(
+                cast(int, row["rank"]),
+                display_name(session, player),
+                cast(int, row["points"]),
+                details if final else None,
+            )
+        )
+    return scoreboard(lines, final)
 
 
 class Engine:
     """Single-owner state machine: reserve, publish, confirm, then advance."""
 
     def __init__(
-        self, session: Session, transport: Transport, path: Path, clock: Callable[[], float]
+        self,
+        session: Session,
+        transport: Transport,
+        path: Path,
+        clock: Callable[[], float],
+        cancel_requested: Callable[[], bool] = lambda: False,
     ) -> None:
         """Bind a snapshot, transport, private destination and injected wall clock."""
         self.session = session
         self.transport = transport
         self.path = path
         self.clock = clock
+        self.cancel_requested = cancel_requested
 
     def save(self) -> None:
         """Durably save all session state; storage errors stop the caller."""
@@ -135,7 +178,7 @@ class Engine:
 
     def publish(self, text: str, suffix: str) -> None:
         """Reserve each chunk before delivery; leave pending on any uncertain result."""
-        limit = self.session.settings.message_chunk_size - 100
+        limit = self.session.settings.message_chunk_size
         for index, chunk in enumerate(split_message(text, max(1, limit))):
             label = marker(self.session, f"{suffix}.{index}")
             previous = next((item for item in self.session.outbox if item.marker == label), None)
@@ -143,7 +186,7 @@ class Engine:
                 if previous.status == "pending":
                     raise QuizError("PUBLICATION_UNCERTAIN", "Resolve the pending message before continuing")
                 continue
-            item = Dispatch(marker=label, text=f"{chunk}\n{label}")
+            item = Dispatch(marker=label, text=chunk)
             self.session.outbox.append(item)
             self.save()
             self.deliver(item.text, label)
@@ -153,6 +196,8 @@ class Engine:
     def deliver(self, text: str, label: str) -> None:
         """Classify unexpected transport errors as uncertain; never retry delivery."""
         try:
+            if self.cancel_requested():
+                raise QuizError("GAME_CANCELLED", "Arrêt demandé")
             self.transport.send(text, label)
         except QuizError:
             raise
@@ -161,12 +206,7 @@ class Engine:
 
     def begin(self) -> None:
         """Announce registration and set its deadline only after confirmed publication."""
-        self.publish(
-            f"Quiz registration: send {self.session.settings.join_command}. "
-            f"Up to {self.session.settings.max_players} players. "
-            f"Registration closes in {self.session.settings.registration_seconds}s.",
-            "join",
-        )
+        self.publish(registration(self.session.settings), "join")
         self.session.deadline = self.clock() + self.session.settings.registration_seconds
         self.save()
 
@@ -176,10 +216,20 @@ class Engine:
         action = actions.get(self.session.phase)
         if action is None:
             return
+        if self.cancel_requested():
+            self.cancel()
+            return
         try:
             action()
         except QuizError as exc:
-            self.pause(exc)
+            self.handle_incident(exc)
+
+    def handle_incident(self, error: QuizError) -> None:
+        """Treat operator cancellation as terminal, keeping other incidents available for recovery."""
+        if error.code == "GAME_CANCELLED":
+            self.cancel()
+        else:
+            self.pause(error)
 
     def pause(self, error: QuizError) -> None:
         """Persist the interrupted phase and human-readable reason; never replay a send."""
@@ -207,7 +257,7 @@ class Engine:
         start = marker(self.session, "join.0")
         stop = marker(self.session, "join-stop.0") if self.clock() >= self.session.deadline else None
         if stop is not None:
-            self.publish("Registration closed.", "join-stop")
+            self.publish(REGISTRATION_CLOSED, "join-stop")
         self.session.registration_observed = self.observe(start, stop, self.session.registration_observed)
         self.session.players = collect_players(self.session.registration_observed, self.session.settings)
         self.session.player_names = registration_names(
@@ -215,9 +265,19 @@ class Engine:
         )
         self.save()
         if stop is not None:
-            if not self.session.players:
-                raise QuizError("NO_PLAYERS", "No players registered; cancel or recover this session")
-            self.next_round()
+            self.close_enrollment()
+
+    def close_enrollment(self) -> None:
+        """Start after complete enrollment, or announce and persist cancellation below the minimum."""
+        count = len(self.session.players)
+        minimum = self.session.settings.nb_players_expected
+        if count < minimum:
+            reason = cancellation(count, minimum)
+            self.publish(reason, "cancel-enrollment")
+            self.session.error = f"ENROLLMENT_INCOMPLETE: {reason}"
+            self.cancel()
+            return
+        self.next_round()
 
     def next_round(self) -> None:
         """Prepare a round once, publish its question, then start the answer deadline."""
@@ -229,8 +289,7 @@ class Engine:
             stop_marker=marker(self.session, f"stop{index}.0"),
         )
         self.publish(
-            f"Question {index + 1}/{len(self.session.questions)}\n{question.question}\n"
-            f"Reply {self.session.settings.answer_prefix} your answer",
+            question_prompt(question, index + 1, len(self.session.questions), self.session.settings),
             f"q{index}",
         )
         self.session.rounds.append(round_)
@@ -243,7 +302,7 @@ class Engine:
         round_ = self.session.rounds[-1]
         stopped = self.clock() >= self.session.deadline
         if stopped:
-            self.publish("STOP", f"stop{len(self.session.rounds) - 1}")
+            self.publish(STOP, f"stop{len(self.session.rounds) - 1}")
         round_.observed = self.observe(
             round_.start_marker, round_.stop_marker if stopped else None, round_.observed
         )
@@ -255,10 +314,10 @@ class Engine:
         """Correct a complete frozen window, report it, and schedule the next round."""
         round_.results = correct_round(round_, self.session.players, self.session.settings)
         self.save()
-        self.publish(
-            f"Answer: {round_.question.answer}\n{round_.question.explanation}\n" + report(self.session),
-            f"result{len(self.session.rounds)}",
-        )
+        text = solution(round_.question) + "\n\n" + report(self.session)
+        if len(self.session.rounds) < len(self.session.questions):
+            text += "\n\n" + next_question_delay(self.session.settings.interval_seconds)
+        self.publish(text, f"result{len(self.session.rounds)}")
         self.session.phase = "interval"
         self.session.deadline = self.clock() + self.session.settings.interval_seconds
         self.save()

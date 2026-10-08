@@ -5,7 +5,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
-from threading import RLock
+from threading import Event, RLock
 from typing import Literal
 
 from fastapi import FastAPI, Request
@@ -15,12 +15,13 @@ from pydantic import Field
 
 from quiz_app.ax_reader import AXReader
 from quiz_app.ax_sender import AXSender
-from quiz_app.config import load_settings
+from quiz_app.config import load_settings, save_settings
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.engine import Engine, new_session
 from quiz_app.errors import QuizError
-from quiz_app.grading import match_answer
-from quiz_app.models import Question, StrictModel
+from quiz_app.grading import evaluate_answer
+from quiz_app.live import live_view
+from quiz_app.models import Question, Settings, StrictModel
 from quiz_app.repository import load_bank, load_session, save_bank
 from quiz_app.storage import locked, read_json
 from quiz_app.transport import Simulator, Transport
@@ -33,6 +34,8 @@ class StartRequest(StrictModel):
 
     mode: Literal["simulation", "native"]
     question_ids: list[str] = Field(min_length=1, max_length=1000)
+    settings: Settings | None = None
+    rehearsal: bool = False
 
 
 class Injection(StrictModel):
@@ -47,6 +50,7 @@ class AnswerTest(StrictModel):
 
     question: Question
     answer: str = Field(max_length=4000)
+    ignore_accents: bool | None = None
 
 
 class Controller:
@@ -57,62 +61,91 @@ class Controller:
         self.root = root
         self.lock = RLock()
         self.engine: Engine | None = None
+        self.stop_requested = Event()
 
     def start(self, value: StartRequest) -> dict[str, object]:
-        """Create a simulation snapshot; refuse native mode until transport validation."""
+        """Start one immutable game snapshot; require validation or explicit native rehearsal."""
         with self.lock:
             if self.engine and self.engine.session.phase not in ("finished", "cancelled"):
                 raise QuizError("GAME_ACTIVE", "Cancel the current game before starting another")
-            settings = load_settings(self.root / ".env")
-            bank = {question.id: question for question in load_bank(self.root / "data/questions.json")}
-            if (
-                len(set(value.question_ids)) != len(value.question_ids)
-                or not set(value.question_ids) <= bank.keys()
-            ):
-                raise QuizError("BANK_INVALID", "Select distinct existing question IDs")
-            session = new_session(settings, [bank[id_] for id_ in value.question_ids], value.mode)
-            self.engine = Engine(
-                session,
-                self.transport(
-                    value.mode,
-                    settings.whatsapp_group,
-                    settings.max_history_pages,
-                    settings.whatsapp_database,
-                ),
-                self.root / f"data/sessions/{session.id}.json",
-                time.time,
-            )
+            self.stop_requested.clear()
             try:
-                self.engine.begin()
-            except QuizError as exc:
-                self.engine.pause(exc)
-            return self.state()
+                return self.initialize(value)
+            except QuizError as error:
+                if error.code == "GAME_CANCELLED":
+                    return {"phase": "cancelled", "stop_requested": True}
+                raise
 
-    def transport(self, mode: str, group: str, max_pages: int, database: str) -> Transport:
-        """Build a simulator or require a matching controlled native validation receipt."""
+    def initialize(self, value: StartRequest) -> dict[str, object]:
+        """Build a settings snapshot and transport, then start once under the controller owner lock."""
+        settings = value.settings or load_settings(self.root / ".env")
+        bank = {question.id: question for question in load_bank(self.root / "data/questions.json")}
+        if (
+            len(set(value.question_ids)) != len(value.question_ids)
+            or not set(value.question_ids) <= bank.keys()
+        ):
+            raise QuizError("BANK_INVALID", "Sélectionnez des questions existantes, sans doublons")
+        session = new_session(settings, [bank[id_] for id_ in value.question_ids], value.mode)
+        session.rehearsal = value.rehearsal
+        self.engine = Engine(
+            session,
+            self.transport(
+                value.mode,
+                settings.whatsapp_group,
+                settings.max_history_pages,
+                settings.whatsapp_database,
+                value.rehearsal,
+            ),
+            self.root / f"data/sessions/{session.id}.json",
+            time.time,
+            self.stop_requested.is_set,
+        )
+        try:
+            self.engine.begin()
+        except QuizError as exc:
+            self.engine.handle_incident(exc)
+        return self.state()
+
+    def transport(
+        self, mode: str, group: str, max_pages: int, database: str, rehearsal: bool = False
+    ) -> Transport:
+        """Build the chosen transport; native use requires validation or explicit rehearsal."""
         if mode == "simulation":
             return Simulator()
         path = self.root / "data/transport-validation.json"
-        if not path.exists() or read_json(path) != {"group": group, "validated": True, "schema": 2}:
+        if not rehearsal and (
+            not path.exists() or read_json(path) != {"group": group, "validated": True, "schema": 2}
+        ):
             raise QuizError(
                 "TRANSPORT_UNVALIDATED", "Run the controlled native test before starting a real game"
             )
-        reader = AXReader(group, max_pages)
+        reader = AXReader(group, max_pages, require_active=False, launch=True)
         source = DatabaseReader(Path(database), group)
         source.recent(1)
-        return DatabaseTransport(source, AXSender(reader).publish)
+        sender = AXSender(reader, self.stop_requested.is_set)
+        sender.open_group()
+        return DatabaseTransport(source, sender.publish, self.root / "data/native-deliveries.json")
 
     def state(self) -> dict[str, object]:
         """Return a fresh JSON-safe snapshot for the dashboard."""
         with self.lock:
-            return self.engine.session.model_dump(mode="json") if self.engine else {}
+            if self.engine is None:
+                return {}
+            return dict(
+                self.engine.session.model_dump(mode="json"),
+                live=live_view(self.engine.session),
+                stop_requested=self.stop_requested.is_set(),
+            )
 
     def tick(self) -> None:
         """Advance a game under its single mutation lock; preserve storage incidents."""
         with self.lock:
-            if self.engine:
+            if self.engine and self.engine.session.phase not in ("finished", "cancelled"):
                 try:
-                    self.engine.tick()
+                    if self.stop_requested.is_set():
+                        self.engine.cancel()
+                    else:
+                        self.engine.tick()
                 except QuizError as exc:
                     self.engine.session.phase = "paused"
                     self.engine.session.error = f"{exc.code}: {exc}"
@@ -134,14 +167,20 @@ class Controller:
         return self.engine
 
     def cancel(self) -> dict[str, object]:
-        """Durably stop an active session under the mutation lock."""
-        with self.lock:
+        """Signal Stop immediately, even during native work; persist cancellation once the owner is free."""
+        self.stop_requested.set()
+        if not self.lock.acquire(blocking=False):
+            return {"stop_requested": True}
+        try:
             self.require_engine().cancel()
             return self.state()
+        finally:
+            self.lock.release()
 
     def resume(self) -> dict[str, object]:
         """Resume a paused game only after every uncertain send is found in history."""
         with self.lock:
+            self.stop_requested.clear()
             self.require_engine().recover()
             return self.state()
 
@@ -153,16 +192,24 @@ class Controller:
             session = load_session(self.root / f"data/sessions/{session_id}.json")
             if self.engine and self.engine.session.phase not in ("finished", "cancelled"):
                 raise QuizError("GAME_ACTIVE", "Cancel the current game before loading an archive")
+            self.stop_requested.clear()
             transport = self.transport(
                 session.mode,
                 session.settings.whatsapp_group,
                 session.settings.max_history_pages,
                 session.settings.whatsapp_database,
+                session.rehearsal,
             )
             if isinstance(transport, Simulator):
                 transport.messages = session.conversation.copy()
+                observed = session.registration_observed + [m for r in session.rounds for m in r.observed]
+                transport.sequence = max((m.sequence or 0 for m in observed + transport.messages), default=0)
             self.engine = Engine(
-                session, transport, self.root / f"data/sessions/{session_id}.json", time.time
+                session,
+                transport,
+                self.root / f"data/sessions/{session_id}.json",
+                time.time,
+                self.stop_requested.is_set,
             )
             if session.phase != "paused":
                 self.engine.pause(
@@ -240,11 +287,14 @@ def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
 
     @app.post("/api/test-answer")
     def test_answer(value: AnswerTest) -> dict[str, object]:
-        """Show exact accepted-alias evidence using current normalization settings."""
-        accepted, alias = match_answer(
-            value.question, value.answer, load_settings(root / ".env").ignore_accents
+        """Test the form's accent setting, falling back to saved defaults for older clients."""
+        ignore_accents = (
+            load_settings(root / ".env").ignore_accents
+            if value.ignore_accents is None
+            else value.ignore_accents
         )
-        return {"accepted": accepted, "alias": alias}
+        verdict = evaluate_answer(value.question, value.answer, ignore_accents)
+        return {"accepted": verdict.accepted, "alias": verdict.alias, "reason": verdict.reason}
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, bool]:
@@ -257,6 +307,13 @@ def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
     def settings() -> dict[str, object]:
         """Display operational defaults; edits belong to the single local .env file."""
         return load_settings(root / ".env").model_dump()
+
+    @app.put("/api/settings")
+    def update_settings(value: Settings) -> dict[str, object]:
+        """Save validated defaults in the private .env, leaving the active game snapshot unchanged."""
+        with controller.lock:
+            save_settings(root / ".env", value)
+            return value.model_dump()
 
     @app.get("/api/session")
     def session() -> dict[str, object]:

@@ -1,5 +1,6 @@
-"""Native read-only bridge: requires the intended WhatsApp group already visible."""
+"""Native read-only bridge: every read verifies the intended active WhatsApp group."""
 
+import subprocess
 import time
 from importlib import import_module
 from typing import Any
@@ -7,14 +8,16 @@ from typing import Any
 from quiz_app.errors import QuizError
 from quiz_app.models import Message
 from quiz_app.native import clean_description, ordered_page, parse_description
-from quiz_app.scrolling import scroll_pixels
+from quiz_app.scrolling import ensure_foreground, require_unlocked, scroll_pixels
 
 
 class AXReader:
     """Read and scroll WhatsApp Desktop; this class has no publication operation."""
 
-    def __init__(self, group: str, max_pages: int = 40) -> None:
-        """Attach to running WhatsApp after checking permissions; never launch or send."""
+    def __init__(
+        self, group: str, max_pages: int = 40, *, require_active: bool = True, launch: bool = False
+    ) -> None:
+        """Check permissions, optionally launch WhatsApp and defer validation until group selection."""
         self.ax: Any = import_module("ApplicationServices")
         self.cocoa: Any = import_module("Cocoa")
         self.group = group
@@ -25,17 +28,58 @@ class AXReader:
             raise QuizError(
                 "PERMISSIONS_DENIED", "Allow the terminal and real Python executable in Accessibility"
             )
-        applications = [
-            app
-            for app in self.cocoa.NSWorkspace.sharedWorkspace().runningApplications()
-            if app.bundleIdentifier() == "net.whatsapp.WhatsApp"
-        ]
-        if len(applications) != 1:
-            raise QuizError("WHATSAPP_UNAVAILABLE", "Open WhatsApp Desktop with the intended group visible")
-        self.running = applications[0]
+        self.running = self.attach(launch)
         self.app = self.ax.AXUIElementCreateApplication(self.running.processIdentifier())
         self.ax.AXUIElementSetMessagingTimeout(self.app, 1.0)
-        self.table = self.require_group()
+        if launch:
+            self.wait_window()
+        self.table = self.require_group() if require_active else None
+
+    def applications(self) -> list[Any]:
+        """Query current WhatsApp processes directly, avoiding the workspace's cached app list."""
+        return list(
+            self.cocoa.NSRunningApplication.runningApplicationsWithBundleIdentifier_("net.whatsapp.WhatsApp")
+        )
+
+    def launch_application(self) -> None:
+        """Ask Launch Services to open WhatsApp; classify missing apps, launch errors and timeouts."""
+        require_unlocked()
+        try:
+            subprocess.run(
+                ["/usr/bin/open", "-b", "net.whatsapp.WhatsApp"],
+                check=True,
+                timeout=10,
+                capture_output=True,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise QuizError(
+                "WHATSAPP_UNAVAILABLE", "Could not launch WhatsApp Desktop; check installation"
+            ) from error
+
+    def attach(self, launch: bool) -> Any:
+        """Attach to exactly one process, optionally launching and waiting up to ten seconds."""
+        applications = self.applications()
+        if not applications and launch:
+            self.launch_application()
+            for _ in range(50):
+                applications = self.applications()
+                if applications:
+                    break
+                time.sleep(0.2)
+        if len(applications) != 1:
+            raise QuizError("WHATSAPP_UNAVAILABLE", "WhatsApp process unavailable or ambiguous")
+        return applications[0]
+
+    def wait_window(self) -> None:
+        """Activate WhatsApp, reopen a closed window and await AX readiness for up to ten seconds."""
+        ensure_foreground(self)
+        if self.attr(self.app, "AXMainWindow") is None:
+            self.launch_application()
+        for _ in range(50):
+            if self.attr(self.app, "AXMainWindow") is not None:
+                return
+            time.sleep(0.2)
+        raise QuizError("UI_UNAVAILABLE", "WhatsApp launched but its window did not become accessible")
 
     def attr(self, element: Any, name: str) -> Any:
         """Return an AX attribute or None if unavailable; individual calls have a timeout."""

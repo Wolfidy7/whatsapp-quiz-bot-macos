@@ -72,6 +72,6 @@ def test_stable_sender_ids_and_identical_labels(settings,question):
     players=collect_players(messages,settings)
     assert players==['member-1111','member-2222']
     session=new_session(settings,[question],'native');session.player_names=dict.fromkeys(players,'Alex')
-    assert display_name(session,players[0])=='Alex [1111]'
+    assert display_name(session,players[0])=='Alex (joueur 1)'
     round_=Round(question=question,start_marker='q',stop_marker='s',observed=[msg('Alex','!r Paris').model_copy(update={'author_id':'member-2222'})])
     assert correct_round(round_,players,settings)[1].points==100

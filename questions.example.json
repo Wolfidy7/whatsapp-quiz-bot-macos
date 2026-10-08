@@ -1,4 +1,6 @@
 [
   {"id":"capital", "question":"Quelle est la capitale de la France ?", "answer":"Paris", "aliases":["Ville de Paris"], "explanation":"Paris est la capitale de la France."},
-  {"id":"language", "question":"Quel langage utilise le symbole C suivi de deux signes plus ?", "answer":"C++", "aliases":[], "explanation":"Les deux signes plus font partie du nom."}
+  {"id":"language", "question":"Quel langage utilise le symbole C suivi de deux signes plus ?", "answer":"C++", "aliases":[], "explanation":"Les deux signes plus font partie du nom."},
+  {"id":"wizard", "question":"Quel personnage de Poudlard porte une cicatrice en forme d'éclair ?", "answer":"Harry Potter", "grading_mode":"person_name", "aliases":[], "explanation":"Le nom complet est attendu ; l'ordre des mots est libre."},
+  {"id":"distance", "question":"Quelle distance, en kilomètres, représente un parcours de 3 étapes de 4 kilomètres ?", "answer":"12 km", "grading_mode":"number", "units":["km","kilomètres"], "require_unit":true, "aliases":[], "explanation":"Trois fois quatre kilomètres font douze kilomètres."}
 ]

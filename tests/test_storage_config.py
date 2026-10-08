@@ -68,3 +68,36 @@ def test_snapshot_invariants(tmp_path,settings,question):
     for change in changes:
         write_json(path,session.model_copy(update=change).model_dump(mode='json'))
         with pytest.raises(QuizError):load_session(path)
+
+
+@pytest.mark.parametrize('value',['0','-1','21','1.5','not-a-number','1001'])
+def test_invalid_minimum_enrollment(tmp_path,value):
+    example=(Path(__file__).parents[1]/'.env.example').read_text()
+    path=tmp_path/'.env';path.write_text(example.replace('NB_PLAYERS_EXPECTED=1',f'NB_PLAYERS_EXPECTED={value}'))
+    with pytest.raises(QuizError) as failure:load_settings(path)
+    assert failure.value.code=='CONFIG_INVALID'
+
+
+def test_minimum_defaults_and_snapshot_compatibility(tmp_path,settings,question):
+    from quiz_app.engine import new_session
+    example=(Path(__file__).parents[1]/'.env.example').read_text()
+    path=tmp_path/'.env';path.write_text(example.replace('NB_PLAYERS_EXPECTED=1\n',''))
+    assert load_settings(path).nb_players_expected==1
+    session=new_session(settings,[question],'simulation').model_dump(mode='json')
+    del session['settings']['nb_players_expected']
+    archive=tmp_path/'archive.json';write_json(archive,session)
+    assert load_session(archive).settings.nb_players_expected==1
+    session['settings']['nb_players_expected']=21
+    write_json(archive,session)
+    with pytest.raises(QuizError,match='schema'):load_session(archive)
+
+
+def test_web_settings_atomic_roundtrip_and_failure(tmp_path,settings):
+    from quiz_app.config import save_settings
+    path=tmp_path/'.env';settings.whatsapp_group='Groupe "fictif"'
+    save_settings(path,settings)
+    assert load_settings(path)==settings and path.stat().st_mode & 0o777==0o600
+    before=path.read_bytes()
+    with patch('quiz_app.config.os.replace',side_effect=OSError('disk')):
+        with pytest.raises(QuizError,match='enregistrer'):save_settings(path,settings)
+    assert path.read_bytes()==before and not list(tmp_path.glob('.settings-*'))
