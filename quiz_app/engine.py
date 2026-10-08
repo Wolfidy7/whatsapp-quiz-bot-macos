@@ -6,7 +6,7 @@ from typing import cast
 from uuid import uuid4
 
 from quiz_app.errors import QuizError
-from quiz_app.grading import evaluate_answer, extract_answer
+from quiz_app.grading import Scorer, evaluate_answer, extract_answer, offline
 from quiz_app.history import reconcile_game
 from quiz_app.messages import (
     REGISTRATION_CLOSED,
@@ -65,7 +65,9 @@ def collect_players(messages: list[Message], settings: Settings) -> list[str]:
     return players
 
 
-def correct_round(round_: Round, players: list[str], settings: Settings) -> list[Result]:
+def correct_round(
+    round_: Round, players: list[str], settings: Settings, scorer: Scorer = offline
+) -> list[Result]:
     """Freeze the first qualified answer per player and rank only correct replies."""
     first: dict[str, str] = {}
     for message in round_.observed:
@@ -77,17 +79,24 @@ def correct_round(round_: Round, players: list[str], settings: Settings) -> list
         key = player_key(message)
         if key in players and key not in first:
             first[key] = answer
-    return grade_answers(first, players, round_.question, settings)
+    return grade_answers(first, players, round_.question, settings, scorer)
 
 
 def grade_answers(
-    first: dict[str, str], players: list[str], question: Question, settings: Settings
+    first: dict[str, str],
+    players: list[str],
+    question: Question,
+    settings: Settings,
+    scorer: Scorer = offline,
 ) -> list[Result]:
-    """Grade first answers in their insertion order; include absent players at zero."""
+    """Score all first answers at once, then rank them in insertion order; absent players get zero."""
+    scores = scorer(question, first) if first else {}
     results: dict[str, Result] = {}
     rank = 0
     for player, answer in first.items():
-        verdict = evaluate_answer(question, answer, settings.ignore_accents)
+        verdict = evaluate_answer(
+            question, answer, scores.get(player), settings.jev_threshold, settings.ignore_accents
+        )
         accepted, alias = verdict.accepted, verdict.alias
         rank += int(accepted)
         points = (
@@ -99,6 +108,8 @@ def grade_answers(
             accepted=accepted,
             alias=alias,
             reason=verdict.reason,
+            score=verdict.score,
+            source=verdict.source,
             rank=rank if accepted else None,
             points=points,
         )
@@ -162,13 +173,15 @@ class Engine:
         path: Path,
         clock: Callable[[], float],
         cancel_requested: Callable[[], bool] = lambda: False,
+        scorer: Scorer = offline,
     ) -> None:
-        """Bind a snapshot, transport, private destination and injected wall clock."""
+        """Bind a snapshot, transport, private destination, injected wall clock and answer scorer."""
         self.session = session
         self.transport = transport
         self.path = path
         self.clock = clock
         self.cancel_requested = cancel_requested
+        self.scorer = scorer
 
     def save(self) -> None:
         """Durably save all session state; storage errors stop the caller."""
@@ -311,8 +324,8 @@ class Engine:
             self.finish_round(round_)
 
     def finish_round(self, round_: Round) -> None:
-        """Correct a complete frozen window, report it, and schedule the next round."""
-        round_.results = correct_round(round_, self.session.players, self.session.settings)
+        """Correct a complete frozen window with jev, report it, and schedule the next round."""
+        round_.results = correct_round(round_, self.session.players, self.session.settings, self.scorer)
         self.save()
         text = solution(round_.question) + "\n\n" + report(self.session)
         if len(self.session.rounds) < len(self.session.questions):

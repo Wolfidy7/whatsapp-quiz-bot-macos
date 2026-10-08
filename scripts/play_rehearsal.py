@@ -8,10 +8,11 @@ from pydantic import ValidationError
 
 from quiz_app.ax_reader import AXReader
 from quiz_app.ax_sender import AXSender
-from quiz_app.config import load_settings
+from quiz_app.config import load_api_key, load_settings
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.engine import Engine, display_name, new_session, report
 from quiz_app.errors import QuizError
+from quiz_app.grading import jev_scorer
 from quiz_app.models import Settings
 from quiz_app.repository import load_bank
 from quiz_app.storage import locked
@@ -75,7 +76,8 @@ def play(args: argparse.Namespace, root: Path) -> None:
         session = new_session(settings, bank, "native")
         session.rehearsal = True
         path = root / f"data/sessions/{session.id}.json"
-        engine = Engine(session, transport, path, time.time)
+        scorer = jev_scorer(load_api_key(root / ".env"), settings.jev_model)
+        engine = Engine(session, transport, path, time.time, scorer=scorer)
         print(
             f"Partie réelle : {settings.whatsapp_group} · "
             f"{settings.nb_players_expected}–{settings.max_players} joueurs · "

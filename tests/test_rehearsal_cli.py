@@ -22,8 +22,8 @@ def test_real_rehearsal_command_is_fully_simulated(tmp_path,question,use_overrid
     bank.write_text(json.dumps([question.model_copy(update={'id':f'q{i}'}).model_dump() for i in range(3)]))
     args=argparse.Namespace(group='Fictional group',players=5,questions=bank,join_seconds=1,seconds=1) if use_overrides else argparse.Namespace(group=None,players=None,questions=None,join_seconds=None,seconds=None)
     clock=[100.];holder=[];sim=Simulator();injected=set()
-    def construct(session,transport,path,actual_clock):
-        engine=Engine(session,sim,path,lambda:clock[0]);holder.append(engine);return engine
+    def construct(session,transport,path,actual_clock,scorer):
+        engine=Engine(session,sim,path,lambda:clock[0],scorer=scorer);holder.append(engine);return engine
     def advance(seconds):
         engine=holder[-1];key=(engine.session.phase,len(engine.session.rounds))
         if key not in injected:
@@ -44,6 +44,7 @@ def test_real_rehearsal_command_is_fully_simulated(tmp_path,question,use_overrid
     assert session.settings.max_players==5 and session.settings.registration_seconds==1
     assert session.settings.question_seconds==1
     assert [[r.points for r in q.results] for q in session.rounds]==[[100,20]]*3
+    assert {r.source for q in session.rounds for r in q.results}=={'fallback'}
     assert not (tmp_path/'data/transport-validation.json').exists()
     args.players=0
     with pytest.raises(QuizError,match='settings'):play(args,tmp_path)

@@ -35,11 +35,11 @@ def test_announcements_use_configured_commands_and_durations(settings,question):
 
 
 def test_solution_preserves_significant_characters_and_optional_explanation(question):
-    q=question.model_copy(update={'answer':'C++','explanation':''})
+    q=question.model_copy(update={'criteria':question.criteria.model_copy(update={'true':'C++'}),'explanation':''})
     assert solution(q)=='✅ *LA BONNE RÉPONSE*\n\n🎯 *C++*'
     q=q.model_copy(update={'explanation':'Un langage de programmation.'})
     assert solution(q).endswith('💡 _Un langage de programmation._')
-    q=q.model_copy(update={'answer':'-5'})
+    q=q.model_copy(update={'criteria':q.criteria.model_copy(update={'true':'-5'})})
     assert '*-5*' in solution(q)
 
 
@@ -87,7 +87,7 @@ def test_layout_aware_splitting_preserves_text_and_whatsapp_formatting():
 
 def test_all_game_publications_are_french_and_clean(tmp_path,settings):
     from quiz_app.models import Question
-    q=Question(id='capital',question='Quelle est la capitale de la France ?',answer='Paris',explanation='Paris est la capitale française.')
+    q=Question(id='capital',question='Quelle est la capitale de la France ?',criteria={'true':'Paris','false':'Autre'},explanation='Paris est la capitale française.')
     now=[100.];sim=Simulator();engine=Engine(new_session(settings,[q],'simulation'),sim,tmp_path/'session.json',lambda:now[0])
     engine.begin();sim.inject('Camille','!join')
     now[0]=engine.session.deadline;engine.tick()

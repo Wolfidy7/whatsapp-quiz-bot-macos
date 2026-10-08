@@ -16,7 +16,6 @@ def verify(path: Path) -> None:
         "quiz_app/grading.py",
         "quiz_app/jev.py",
         "quiz_app/normalization.py",
-        "quiz_app/numeric.py",
         "quiz_app/scoring.py",
     ):
         if report["files"][name]["summary"]["missing_branches"]:

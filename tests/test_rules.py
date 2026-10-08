@@ -1,7 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 import pytest
 from pydantic import ValidationError
-from quiz_app.grading import normalize, match_answer, extract_answer
+from quiz_app.grading import normalize, fallback_verdict, extract_answer
 from quiz_app.models import Question, Message, Result, Round
 from quiz_app.scoring import points_for_rank, standings
 from quiz_app.engine import collect_players, correct_round, grade_answers, split_message
@@ -16,7 +16,7 @@ def test_accents_optional():
 
 @pytest.mark.parametrize('answer,accepted', [('PARIS!',True),('ville de Paris',True),('Pari',False),('Paris ou Londres',False),('pas Paris',False),('Paris France',False),('',False)])
 def test_alias(question,answer,accepted):
-    assert match_answer(question,answer)[0] is accepted
+    assert fallback_verdict(question,answer).accepted is accepted
 
 @pytest.mark.parametrize('body,expected',[('!R Paris','Paris'),('!r  Paris  ','Paris'),('!r','invalid'),('!r   ','invalid'),('Paris','invalid'),('!rParis','invalid'),('!r \n Paris','Paris')])
 def test_extract(body,expected):
@@ -54,7 +54,7 @@ def test_first_answer(question,settings):
     with pytest.raises(QuizError): correct_round(round_,['A'],settings)
 
 def test_question_blank():
-    with pytest.raises(ValidationError): Question(id='x',question=' ',answer='Paris')
+    with pytest.raises(ValidationError): Question(id='x',question=' ',criteria={'true':'Paris','false':'Autre'})
 
 def test_split():
     assert ''.join(split_message('abcde',2))=='abcde'

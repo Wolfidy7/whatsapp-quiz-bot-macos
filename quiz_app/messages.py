@@ -49,9 +49,9 @@ def question_prompt(question: Question, index: int, total: int, settings: Settin
 
 
 def solution(question: Question) -> str:
-    """Reveal the official answer and an optional explanation, preserving their exact content."""
+    """Reveal the true criterion and an optional explanation, preserving their exact content."""
     explanation = f"\n\n💡 _{question.explanation}_" if question.explanation else ""
-    return f"✅ *LA BONNE RÉPONSE*\n\n🎯 *{question.answer}*{explanation}"
+    return f"✅ *LA BONNE RÉPONSE*\n\n🎯 *{question.criteria.true}*{explanation}"
 
 
 def next_question_delay(seconds: int) -> str:

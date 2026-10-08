@@ -12,7 +12,7 @@ from quiz_app.storage import write_json
 def root(tmp_path):
     project=Path(__file__).parents[1]
     (tmp_path/'.env').write_text((project/'.env.example').read_text())
-    write_json(tmp_path/'data/questions.json',[{'id':'capital','question':'Capital?','answer':'Paris'}])
+    write_json(tmp_path/'data/questions.json',[{'id':'capital','question':'Capital?','criteria':{'true':'Paris','false':'Autre'}}])
     return tmp_path
 
 def test_api(root):
@@ -25,7 +25,7 @@ def test_api(root):
         bank=client.get('/api/questions').json()
         assert client.put('/api/questions',json=bank).status_code==200
         assert client.put('/api/questions',json=[]).status_code==409
-        assert client.post('/api/test-answer',json={'question':bank[0],'answer':'PARIS'}).json()=={'accepted':True,'alias':'Paris','reason':'Correspondance exacte après normalisation.'}
+        assert client.post('/api/test-answer',json={'question':bank[0],'answer':'PARIS'}).json()=={'accepted':True,'alias':'Paris','reason':'Repli local (jev indisponible) : correspondance exacte après normalisation.','score':None,'source':'fallback'}
         assert client.post('/api/start',json={'mode':'native','question_ids':['capital']}).status_code==409
         assert client.post('/api/start',json={'mode':'simulation','question_ids':['missing']}).status_code==409
         assert client.post('/api/start',json={'mode':'simulation','question_ids':['capital','capital']}).status_code==409
@@ -134,7 +134,7 @@ def test_web_settings_snapshot_and_live_scores(root):
         bad=dict(defaults,nb_players_expected=6)
         assert client.put('/api/settings',json=bad).status_code==422
         assert client.put('/api/settings',json=dict(defaults,unexpected='bad')).status_code==422
-        accented={'id':'accent','question':'Un mot ?','answer':'Été'}
+        accented={'id':'accent','question':'Un mot ?','criteria':{'true':'Été','false':'Autre'}}
         trial={'question':accented,'answer':'ete','ignore_accents':False}
         assert client.post('/api/test-answer',json=trial).json()['accepted'] is False
         trial['ignore_accents']=True

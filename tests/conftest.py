@@ -9,4 +9,4 @@ def settings():
 
 @pytest.fixture
 def question():
-    return Question(id='capital', question='Capital?', answer='Paris', aliases=['Ville de Paris'])
+    return Question(id='capital', question='Capital?', criteria={'true':'Paris','false':'Toute autre réponse'}, aliases=['Ville de Paris'])
