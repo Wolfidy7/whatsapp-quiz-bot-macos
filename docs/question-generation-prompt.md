@@ -3,17 +3,36 @@
 Ce prompt sert à faire générer des questions par une IA, au format attendu par la banque de questions jev. Remplacez `[NOMBRE]`, `[THÈME]` et la difficulté, puis collez le JSON obtenu dans **Gérer la banque de questions** et cliquez sur **Enregistrer les questions**.
 
 - **Coller remplace toute la banque.** La zone JSON contient la banque entière. Pour ajouter des questions, insérez les nouveaux objets dans le tableau existant, juste avant le `]` final, en ajoutant une virgule.
+- **Une seule question invalide fait rejeter tout le lot**, par exemple un identifiant accentué. Corrigez-la avant d'enregistrer.
 - **Testez quelques questions avant de jouer**, surtout les questions sur des personnes. Dans le testeur, essayez un prénom seul, une mauvaise réponse proche et une faute de frappe. Si un piège passe, ajoutez ce cas au critère faux.
 
-## Pourquoi la forme « La réponse est fausse si elle : … »
+## Ce que les tests ont montré
 
-Trois rédactions du critère faux ont été comparées avec `jev-latest`, au seuil de 0,8, sur des pièges réels : prénoms seuls, fautes de frappe sur un autre nom, nombres proches écrits en lettres. Chaque rédaction a été évaluée deux fois.
+Toutes les mesures ont été faites avec `jev-latest`, au seuil de 0,8. Chaque réponse est évaluée deux à trois fois, sur des bonnes réponses (exactes, avec faute, en forme courte) et sur des pièges plausibles.
+
+**Itération 1, 5 questions de sport.** Trois rédactions du critère faux ont été comparées.
 
 | Rédaction du critère faux | Résultat |
 | --- | --- |
 | Liste courte (« Tout autre joueur que George Weah, comme Samuel Eto'o… ») | Le prénom seul « George » est accepté jusqu'à 0,96, et « Steffi » jusqu'à 0,98 |
-| Critère positif (« La réponse ne contient pas le nom Weah… ») | Les prénoms seuls restent acceptés, avec une marge négative ou faible |
-| **Cas explicites (« La réponse est fausse si elle : … ; … ; … »)** | **1 erreur sur 78 évaluations** sur la banque de test, avec une marge positive sur chaque question |
+| Critère positif (« La réponse ne contient pas le nom Weah… ») | Les prénoms seuls restent acceptés |
+| **Cas explicites (« La réponse est fausse si elle : … ; … ; … »)** | **1 erreur sur 78 évaluations** |
+
+**Itération 2, 50 questions de culture générale générées par une IA avec ce prompt.** 33 erreurs sur 712 évaluations, soit 95,4 % de bonnes évaluations. Après correction des critères, on descend à 14 erreurs sur 684. Les enseignements, désormais intégrés au prompt :
+
+- **Citer les orthographes acceptées dans le critère faux se retourne contre nous.** Avec « ni une orthographe proche (Curry, Curi) », la réponse « Marie Curry » tombe à 0,33 : jev associe au faux tout ce qui est écrit dans ce critère.
+- **Certaines questions ne peuvent pas être notées de façon fiable.** C'est le cas quand la mauvaise réponse la plus probable est le nom même de ce qui est demandé : « oxygène » est accepté jusqu'à 0,93 pour le symbole O, et « brésilien » jusqu'à 0,86 pour la langue du Brésil. C'est aussi le cas quand un concurrent est très lié à la bonne réponse : « Anatomie d'une chute » est accepté à 0,83 pour l'Oscar du meilleur film 2024.
+- **Expliquer pourquoi un piège est faux n'aide pas.** Par exemple « le Soleil est une étoile, pas une planète » ne fait pas baisser le score. Il vaut mieux citer le piège et choisir une autre question.
+- **Les pièges à nommer explicitement** sont :
+  - les années ou nombres écrits en lettres, comme « mille sept cent quatre-vingt-treize » accepté à 0,89 ;
+  - une catégorie plus large, comme « Himalaya » accepté à 0,90 pour le plus haut sommet ;
+  - un ancien nom, comme « URSS » accepté à 0,84 ;
+  - une réponse qui en cite plusieurs, comme « Pacifique Nord et Atlantique » accepté à 0,88.
+- **Les erreurs de forme** sont :
+  - un identifiant accentué, qui a bloqué tout le lot ;
+  - un identifiant sans rapport avec la question ;
+  - un film inventé dans la liste des pièges ;
+  - des superlatifs approximatifs dans les explications.
 
 Le critère vrai est aussi annoncé aux joueurs comme « la bonne réponse ». Il doit donc rester une réponse courte, et les nuances de notation vont dans le critère faux.
 
@@ -27,7 +46,7 @@ Génère [NOMBRE] questions sur le thème [THÈME], de difficulté [FACILE / MOY
 
 FORMAT DE SORTIE — STRICT
 - Réponds UNIQUEMENT avec un tableau JSON valide. Pas de texte avant ou après, pas de bloc ```json, pas de commentaires.
-- Chaque élément contient exactement ces 5 champs, et aucun autre (tout champ inconnu fait rejeter la banque entière) :
+- Chaque élément contient exactement ces 5 champs, et aucun autre. Une seule erreur de format dans une seule question fait rejeter TOUT le lot.
   {
     "id": string,
     "question": string,
@@ -36,11 +55,18 @@ FORMAT DE SORTIE — STRICT
     "explanation": string
   }
 
+CHOIX DES QUESTIONS — ce qui rend la notation fiable
+Le correcteur est fiable quand la bonne réponse est un nom propre, un nombre ou une date, et que les mauvaises réponses plausibles sont des choses DIFFÉRENTES de la bonne réponse. Écarte une question, et choisis-en une autre, si l'un de ces cas s'applique :
+- La mauvaise réponse la plus probable est le nom même de ce qui est demandé, ou un mot de la même famille. Par exemple « Quel est le symbole de l'oxygène ? », où un joueur répondra « oxygène », ou « Quelle langue parle-t-on au Brésil ? », où il répondra « brésilien ».
+- Une mauvaise réponse très plausible est fortement liée à la bonne réponse : même cérémonie, même événement, prix voisin. Par exemple « Quel film a reçu l'Oscar du meilleur film en 2024 ? », alors qu'un autre film nommé a reçu la Palme d'or.
+- La réponse est une abréviation, un symbole ou un code d'une ou deux lettres.
+- Plusieurs réponses peuvent être défendues. Par exemple, « le plus grand organe » ou « le plus petit pays » peuvent prêter à discussion.
+
 RÈGLES PAR CHAMP
 
 1. "id"
-   - Uniquement des lettres non accentuées, des chiffres, « - » ou « _ », au maximum 80 caractères.
-   - Il est unique dans le tableau et décrit la question. Préfixe-le par le thème, par exemple « sport-decathlon-nombre-epreuves ».
+   - UNIQUEMENT des lettres a à z SANS ACCENT, des chiffres, « - » ou « _ ». Pas d'espace, pas d'apostrophe, au maximum 80 caractères. Transforme les accents : « misérables » devient « miserables ».
+   - Il est unique dans le tableau et décrit CETTE question. Préfixe-le par le thème, par exemple « sport-decathlon-nombre-epreuves ».
 
 2. "question" (au maximum 2000 caractères)
    - Elle doit avoir une seule bonne réponse, factuelle et vérifiable.
@@ -53,34 +79,44 @@ RÈGLES PAR CHAMP
    - IMPORTANT : ce texte est annoncé aux joueurs comme « la bonne réponse ». Il ne doit contenir AUCUNE consigne de notation (pas de « y compris… » ni « accepter… »). Juste la réponse.
 
 4. "criteria.false" (au maximum 500 caractères) — LE CHAMP LE PLUS IMPORTANT
-   Le modèle a tendance à accepter trop facilement : une réponse partielle, une faute de frappe sur un AUTRE nom, ou un nombre proche. C'est ce champ qui l'empêche de se tromper. Une formulation vague comme « Toute autre réponse » donne de mauvais résultats.
+   Le modèle a tendance à accepter trop facilement une réponse partielle, une faute de frappe sur un AUTRE nom, un nombre proche ou une catégorie voisine. C'est ce champ qui l'en empêche. Une formulation vague comme « Toute autre réponse » donne de mauvais résultats.
 
    Utilise TOUJOURS cette structure, dont l'efficacité a été mesurée :
    « La réponse est fausse si elle : [cas 1] ; [cas 2] ; [cas 3]. »
 
    Les cas à couvrir, selon le type de réponse :
-   a) Les confusions plausibles : cite 3 à 5 mauvaises réponses qu'un joueur pourrait vraiment donner (même catégorie, même époque, même pays, même domaine), suivies de « … », puis précise « même mal écrit(e) ». Exemple : « désigne un autre joueur (Samuel Eto'o, Didier Drogba, Roger Milla…), même mal écrit ».
+   a) Les confusions plausibles : cite 3 à 5 mauvaises réponses qu'un joueur pourrait vraiment donner (même catégorie, même époque, même pays, même domaine), suivies de « … », puis précise « même mal écrit(e) ». Exemple : « désigne un autre joueur (Samuel Eto'o, Didier Drogba, Roger Milla…), même mal écrit ». Ne cite que des éléments qui existent réellement, et n'invente jamais un titre, un nom ou un lieu.
    b) Les réponses partielles insuffisantes : pour une personne, un prénom seul ne suffit jamais. Écris-le explicitement avec le prénom réel, par exemple « ne donne que le prénom « George » ».
-   c) L'élément indispensable : termine par ce que la réponse doit absolument contenir. Pour une personne, c'est le nom de famille, par exemple « ou ne contient pas le nom Weah ». Si ce nom s'écrit souvent avec des fautes, ajoute les variantes à accepter, par exemple « ou ne contient ni le nom Graf ni une orthographe proche (Graff, Grafe) ».
-   d) Les nombres et les durées : « donne un autre nombre que dix, en chiffres ou en lettres (sept, huit, cinq, douze…) ». Cite des nombres proches ET certains écrits en lettres. Pour une durée, exclus aussi les autres unités, par exemple « exprime une durée en minutes (une minute…) ».
-   e) Les lieux et les équipes : cite les pays ou équipes concurrents, y compris leurs surnoms, par exemple « (Australie, Wallabies, France…) ».
+   c) Les catégories voisines, selon le cas :
+      - une catégorie plus large ou un ensemble qui contient la réponse : « désigne une chaîne de montagnes ou une région (Himalaya, Alpes…) au lieu d'un sommet », ou « désigne la ville qui l'entoure (Rome) » ;
+      - un ancien nom ou un ancien État : « URSS, Union soviétique » ;
+      - un objet d'une autre nature : « désigne une étoile ou un autre astre (le Soleil, la Lune…) », « désigne une substance qui n'est pas un métal (eau, brome…) » ;
+      - plusieurs réponses à la fois : « cite plusieurs océans ».
+   d) Les nombres, les années et les durées : « donne une autre année que 1789, en chiffres ou en lettres (1788, 1792, 1799, mille sept cent quatre-vingt-treize…) ». Cite toujours des valeurs proches ET au moins une écrite en lettres. Pour une durée, exclus aussi les autres unités, par exemple « exprime une durée en minutes (une minute…) ».
+   e) L'élément indispensable : termine par ce que la réponse doit absolument contenir. Pour une personne, c'est le nom de famille, par exemple « ou ne contient pas le nom Weah ». Pour un lieu, c'est son nom, par exemple « ou ne contient pas le nom Ottawa ».
 
-   N'écris pas de règle contraire à la bonne réponse. Ne cite jamais une forme acceptable de la bonne réponse comme exemple de réponse fausse.
+   INTERDIT dans "criteria.false" :
+   - Citer des formes ACCEPTÉES de la bonne réponse : orthographes proches, variantes, traductions, ou une parenthèse « (X est accepté) ». Le modèle associe au faux tout ce qui est écrit dans ce critère, et refuse alors ces formes. Les formes acceptées vont UNIQUEMENT dans "aliases".
+   - Toute règle qui contredit la bonne réponse, ou qui dit qu'un cas est accepté.
+   - Expliquer pourquoi un piège est faux, par exemple « le Soleil est une étoile, pas une planète ». Cela n'aide pas : cite simplement le piège.
 
 5. "aliases" (au maximum 100 éléments, peut être vide)
    - C'est un filet de secours utilisé UNIQUEMENT si jev est indisponible. On compare alors la réponse mot pour mot, sans tenir compte des majuscules, des accents ni de la ponctuation finale.
-   - Mets 2 à 6 formes exactes et courantes de la bonne réponse : nom seul, orthographe alternative, nombre en lettres. Par exemple ["Weah", "Georges Weah"] ou ["dix", "10 épreuves"].
+   - Mets 2 à 6 formes exactes et courantes de la bonne réponse : nom seul, orthographe alternative, traduction courante, nombre en lettres. Par exemple ["Weah", "Georges Weah"] ou ["dix", "10 épreuves"].
    - Pas besoin d'être exhaustif, et n'y mets jamais de forme qui serait fausse. Chaque alias doit contenir au moins une lettre ou un chiffre.
 
 6. "explanation" (au maximum 2000 caractères)
    - Une à deux phrases, montrées aux joueurs après la réponse. Elles confirment la réponse et ajoutent un fait intéressant.
+   - N'écris que des faits sûrs. Évite les superlatifs discutables (« la plus grande ville d'Afrique ») et les ordres de grandeur approximatifs (« deux fois plus grand »). En cas de doute, retire la précision.
 
-VÉRIFICATION AVANT DE RÉPONDRE
-- Le JSON est valide, sans virgule finale, avec des guillemets doubles. Les guillemets internes sont des « » ou des apostrophes typographiques.
-- Les "id" sont tous uniques, et chaque objet contient exactement les 5 champs.
+VÉRIFICATION AVANT DE RÉPONDRE — passe chaque question en revue
+- Chaque "id" ne contient que a à z, 0 à 9, « - » ou « _ », sans aucun accent. Il est unique et correspond à la question.
+- Chaque objet contient exactement les 5 champs, et le JSON est valide : guillemets doubles, pas de virgule finale. Les guillemets internes sont des « » ou des apostrophes typographiques.
+- Aucune question ne relève d'un des cas à écarter de la section « CHOIX DES QUESTIONS ».
 - "criteria.true" est une réponse courte, sans consigne.
-- Chaque "criteria.false" commence par « La réponse est fausse si elle » et couvre les confusions plausibles, avec « même mal écrit ». Il couvre aussi la réponse partielle, si c'est une personne, et l'élément indispensable.
-- Chaque fait est exact. En cas de doute sur un fait, remplace la question.
+- Chaque "criteria.false" commence par « La réponse est fausse si elle ». Il cite des pièges réels avec « même mal écrit », le prénom seul (pour une personne), les catégories voisines pertinentes, les valeurs en lettres (pour un nombre) et l'élément indispensable.
+- Aucun "criteria.false" ne contient de forme acceptée, de variante d'orthographe de la bonne réponse, ni de « est accepté ».
+- Chaque fait de la question, de la réponse et de l'explication est exact. En cas de doute, remplace la question.
 
 EXEMPLE DE SORTIE ATTENDUE
 [
@@ -95,14 +131,24 @@ EXEMPLE DE SORTIE ATTENDUE
     "explanation": "George Weah, international libérien, a remporté le Ballon d'Or 1995 sous les couleurs de l'AC Milan."
   },
   {
-    "id": "sport-decathlon-nombre-epreuves",
-    "question": "Combien d'épreuves composent le décathlon en athlétisme ?",
+    "id": "histoire-prise-bastille-annee",
+    "question": "En quelle année a eu lieu la prise de la Bastille ?",
     "criteria": {
-      "true": "10",
-      "false": "La réponse est fausse si elle donne un autre nombre que dix, en chiffres ou en lettres (sept, huit, cinq, douze…)."
+      "true": "1789",
+      "false": "La réponse est fausse si elle donne une autre année que 1789, en chiffres ou en lettres (1788, 1792, 1793, 1799, mille sept cent quatre-vingt-treize…)."
     },
-    "aliases": ["dix", "10 épreuves", "dix épreuves"],
-    "explanation": "Le décathlon regroupe dix épreuves disputées sur deux jours."
+    "aliases": ["en 1789", "mille sept cent quatre-vingt-neuf"],
+    "explanation": "La prise de la Bastille a eu lieu le 14 juillet 1789 à Paris, date devenue la fête nationale française."
+  },
+  {
+    "id": "geo-plus-haut-sommet-monde",
+    "question": "Quel est le plus haut sommet du monde au-dessus du niveau de la mer ?",
+    "criteria": {
+      "true": "L'Everest",
+      "false": "La réponse est fausse si elle : désigne une autre montagne (K2, Kangchenjunga, Mont Blanc, Kilimandjaro…), même mal écrite ; désigne une chaîne de montagnes ou une région (Himalaya, Alpes, Andes…) au lieu d'un sommet ; ou ne contient pas le nom Everest."
+    },
+    "aliases": ["Everest", "mont Everest"],
+    "explanation": "Le mont Everest culmine à 8 849 mètres dans l'Himalaya, à la frontière entre le Népal et la Chine."
   }
 ]
 ````
