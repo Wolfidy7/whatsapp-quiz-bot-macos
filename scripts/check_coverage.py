@@ -14,6 +14,7 @@ def verify(path: Path) -> None:
         raise SystemExit("Application branch coverage must be at least 90%")
     for name in (
         "quiz_app/grading.py",
+        "quiz_app/jev.py",
         "quiz_app/normalization.py",
         "quiz_app/numeric.py",
         "quiz_app/scoring.py",
