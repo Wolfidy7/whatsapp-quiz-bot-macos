@@ -79,6 +79,8 @@ class Settings(StrictModel):
     max_history_pages: int = Field(ge=1, le=10000)
     message_chunk_size: int = Field(ge=200, le=4000)
     port: int = Field(ge=1024, le=65535)
+    jev_threshold: float = Field(default=0.8, ge=0, le=1, allow_inf_nan=False)
+    jev_model: str = Field(default="jev-latest", pattern=r"^[A-Za-z0-9._-]{1,80}$")
 
     @model_validator(mode="after")
     def valid_player_limits(self) -> Self:
