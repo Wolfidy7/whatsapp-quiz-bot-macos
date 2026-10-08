@@ -100,6 +100,8 @@ jev returns a probability between 0 and 1. The answer is accepted when it is **g
 
 Open-round points on the dashboard are **provisional and use the local fallback only**. jev is called once per answer when the round closes, so dashboard refreshes never call it and it never delays the STOP message.
 
+To generate questions with an AI, use the prompt in [docs/question-generation-prompt.md](docs/question-generation-prompt.md). It documents the measured best way to write `criteria.false`.
+
 Save, import or export the bank from the dashboard. The tester calls jev with the draft question, threshold and model, including unsaved changes, and shows the score or the fallback reason. Saving a bank never changes a running game's frozen rules or previously awarded points. Older banks using `answer` and `grading_mode` are rejected. To rewrite one, open **Gérer la banque de questions** and select each question. A legacy `answer` prefills **Critère vrai**. Fill in **Critère faux** and the optional fallback aliases, click **Appliquer au brouillon JSON**, which also drops the retired fields, then **Enregistrer les questions**. The threshold is set under **Seuil de confiance jev**, and the model under the advanced settings. The game history shows, for each answer, its jev score or `repli local`.
 
 ## Rehearse without sending anything
