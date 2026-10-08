@@ -18,11 +18,13 @@
 <div class="actions game-actions"><button id="start" disabled>▶ Démarrer</button><button id="cancel" class="danger" disabled>■ Arrêter</button></div>
 <details><summary>Gérer la banque de questions</summary><label for="bank">Questions et réponses (JSON)</label><textarea id="bank" spellcheck="false" rows="10"></textarea><div class="actions"><button id="save" class="secondary">Enregistrer les questions</button><button id="export" class="secondary">Exporter</button><label class="file-button">Importer<input type="file" id="import" accept="application/json,.json"></label></div>
 <h3>Régler et tester la correction</h3><label for="question">Question</label><select id="question"></select>
-<label for="grading-mode">Mode de correction</label><select id="grading-mode"><option value="exact">Texte exact et alias</option><option value="person_name">Nom de personne ou de personnage · ordre libre</option><option value="number">Nombre · valeur décimale exacte</option></select>
-<p class="muted">Le mode « nom » exige tous les mots d’une réponse ou d’un alias, même répétés, dans n’importe quel ordre. Les fautes de frappe et les mots ajoutés sont refusés.</p>
-<div id="numeric-options" hidden><label for="units">Unités acceptées (une forme par ligne)</label><textarea id="units" rows="3" placeholder="km&#10;kilomètres"></textarea><label class="question-option"><input id="require-unit" type="checkbox"><span>Exiger une unité dans la réponse</span></label><p class="muted">La réponse officielle et les alias doivent être numériques, avec une unité déclarée si elle est exigée : « 12 km ». La virgule et le point sont décimaux. Pas de conversion d’unités, de séparateurs de milliers ni de calculs.</p></div>
-<div class="actions"><button id="apply-correction" class="secondary">Appliquer au brouillon JSON</button></div><p class="muted">Appliquez le mode au brouillon, puis cliquez sur « Enregistrer les questions ». Les parties déjà lancées gardent leurs règles.</p>
-<label for="candidate">Réponse du joueur</label><div class="actions"><input id="candidate" placeholder="Paris"><button id="check" class="secondary">Vérifier</button></div><p id="verdict" role="status" class="muted">Teste les valeurs affichées, même avant enregistrement.</p></details>
+<label for="criteria-true">Critère vrai · réponse attendue</label><input id="criteria-true" maxlength="500" placeholder="Diomaye Faye">
+<p class="muted">jev reçoit la question, ces deux critères et la réponse du joueur. La réponse est acceptée si son score atteint le seuil de confiance. Le critère vrai est aussi annoncé aux joueurs comme bonne réponse.</p>
+<label for="criteria-false">Critère faux</label><input id="criteria-false" maxlength="500" placeholder="Toute autre réponse">
+<label for="aliases">Alias de repli (un par ligne)</label><textarea id="aliases" rows="3" placeholder="Bassirou Diomaye Faye"></textarea>
+<p class="muted">Les alias ne sont jamais envoyés à jev. Ils servent seulement si jev est indisponible : la réponse doit alors correspondre exactement au critère vrai ou à un alias, après normalisation.</p>
+<div class="actions"><button id="apply-correction" class="secondary">Appliquer au brouillon JSON</button></div><p class="muted">Appliquez les critères au brouillon, puis cliquez sur « Enregistrer les questions ». Les parties déjà lancées gardent leurs règles.</p>
+<label for="candidate">Réponse du joueur</label><div class="actions"><input id="candidate" placeholder="Bassirou Diomaye Faye"><button id="check" class="secondary">Vérifier</button></div><p id="verdict" role="status" class="muted">Interroge jev avec les valeurs affichées, même avant enregistrement.</p></details>
 </section>
 <section class="card game-room"><div class="section-heading"><h2>La partie en direct</h2><span id="phase" class="badge">PRÊT</span></div>
 <div class="stats"><div><small>Participants</small><strong id="players">0</strong></div><div><small>Question</small><strong id="round">—</strong></div><div><small>Temps restant</small><strong id="remaining">—</strong></div></div>
@@ -33,6 +35,6 @@
 <details id="simulation-tools" hidden><summary>Simuler un joueur</summary><label for="author">Prénom</label><input id="author" value="Camille" maxlength="100"><label for="reply">Message</label><div class="actions"><input id="reply" value="!join" maxlength="4000"><button id="inject" class="secondary">Envoyer localement</button></div></details>
 <details><summary>Historique et récupération</summary><pre id="results">Aucune partie active.</pre><h3>Envois à vérifier</h3><pre id="pending">Aucun.</pre><label for="archive">Identifiant de la partie archivée</label><input id="archive" maxlength="32"><div class="actions"><button id="recover" class="secondary">Ouvrir l’archive</button><button id="resume" class="secondary">Vérifier et reprendre</button></div><p class="muted">Les archives s’ouvrent en pause. Les envois incertains ne sont jamais renvoyés automatiquement.</p></details>
 </section>
-</div><footer>Interface locale · Inscriptions automatiques · Correction déterministe · Scores transparents</footer>
+</div><footer>Interface locale · Inscriptions automatiques · Correction jev · Scores transparents</footer>
 </main><script type="module" src="/static/app.js"></script>
 </body></html>

@@ -8,7 +8,7 @@ export function label(session, key) {
 export function summary(session) {
   if (!session.id) return 'Aucune partie active.';
   const rows = (session.rounds || []).flatMap((round, index) =>
-    (round.results || []).map(result => `${index + 1}. ${label(session, result.player)}: ${result.points} points · ${result.answer || 'sans réponse'}`));
+    (round.results || []).map(result => `${index + 1}. ${label(session, result.player)}: ${result.points} points · ${result.answer || 'sans réponse'}${grading(result)}`));
   return [`Session: ${session.id}`, `Joueurs : ${(session.players || []).map(key => label(session, key)).join(', ') || 'en attente'}`,
     session.error || '', ...rows].filter(Boolean).join('\n');
 }
@@ -23,7 +23,19 @@ export function parseBank(text) {
   if (!Array.isArray(value)) throw new Error('La banque doit être une liste JSON.');
   return value;
 }
-/** Copy one question with explicit correction options; unit fields only apply to numbers. */
-export function withCorrection(question, mode, units, requireUnit) {
-  return {...question, grading_mode: mode, units: mode === 'number' ? units.split('\n').map(unit => unit.trim()).filter(Boolean) : [], require_unit: mode === 'number' && requireUnit};
+/** Copy one question with jev criteria and fallback aliases, dropping retired correction fields. */
+export function withCorrection(question, criterionTrue, criterionFalse, aliases) {
+  const {answer, grading_mode, units, require_unit, ...rest} = question;
+  return {...rest, criteria: {true: criterionTrue.trim(), false: criterionFalse.trim()},
+    aliases: aliases.split('\n').map(alias => alias.trim()).filter(Boolean)};
+}
+/** Describe how one answer was graded: jev score against the threshold, or the local fallback. */
+export function grading(result) {
+  if (result.source === 'jev') return ` · jev ${result.score.toFixed(2)}`;
+  return result.source === 'fallback' ? ' · repli local' : '';
+}
+/** Explain a tester verdict with its decision source and, for the fallback, the matching reference. */
+export function verdictText(result) {
+  const reference = result.alias ? `référence « ${result.alias} » · ` : '';
+  return `${result.accepted ? 'Acceptée' : 'Refusée'} · ${reference}${result.reason}`;
 }

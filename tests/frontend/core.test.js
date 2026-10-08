@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {summary,remaining,parseBank,label,withCorrection} from '../../quiz_app/static/core.js';
+import {summary,remaining,parseBank,label,withCorrection,grading,verdictText} from '../../quiz_app/static/core.js';
 describe('pure dashboard rules',()=>{
  it('formats complete evidence safely',()=>{
   expect(summary({})).toBe('Aucune partie active.');
@@ -21,10 +21,20 @@ describe('pure dashboard rules',()=>{
  });
 });
 
-it('copies correction modes without retaining incompatible units',()=>{
- const question={id:'length',question:'Longueur ?',answer:'12 km'};
- expect(withCorrection(question,'number',' km \n\nkilomètres ',true)).toEqual({...question,grading_mode:'number',units:['km','kilomètres'],require_unit:true});
- expect(withCorrection(question,'number','',false).require_unit).toBe(false);
- expect(withCorrection(question,'person_name','km',true)).toEqual({...question,grading_mode:'person_name',units:[],require_unit:false});
- expect(question).not.toHaveProperty('grading_mode');
+it('copies jev criteria and fallback aliases, dropping retired correction fields',()=>{
+ const legacy={id:'president',question:'Président ?',answer:'Faye',grading_mode:'person_name',units:['km'],require_unit:true,explanation:'x'};
+ expect(withCorrection(legacy,' Diomaye Faye ',' Toute autre réponse ',' Bassirou Diomaye Faye \n\n Faye ')).toEqual({
+  id:'president',question:'Président ?',explanation:'x',criteria:{true:'Diomaye Faye',false:'Toute autre réponse'},aliases:['Bassirou Diomaye Faye','Faye']});
+ expect(withCorrection({id:'q'},'a','b','').aliases).toEqual([]);
+ expect(legacy).toHaveProperty('grading_mode');
+});
+it('explains jev and fallback grading',()=>{
+ expect(grading({source:'jev',score:0.876})).toBe(' · jev 0.88');
+ expect(grading({source:'fallback',score:null})).toBe(' · repli local');
+ expect(grading({})).toBe('');
+ expect(summary({id:'t',rounds:[{results:[{player:'A',answer:'Faye',points:100,source:'jev',score:0.9},{player:'B',answer:'Sall',points:0,source:'fallback'}]}]}))
+  .toContain('A: 100 points · Faye · jev 0.90\n1. B: 0 points · Sall · repli local');
+ expect(verdictText({accepted:true,alias:null,reason:'Score jev 0.900 ≥ seuil 0.800.'})).toBe('Acceptée · Score jev 0.900 ≥ seuil 0.800.');
+ expect(verdictText({accepted:true,alias:'Faye',reason:'Repli local'})).toBe('Acceptée · référence « Faye » · Repli local');
+ expect(verdictText({accepted:false,alias:null,reason:'Score jev 0.100 < seuil 0.800.'})).toMatch(/^Refusée · /);
 });

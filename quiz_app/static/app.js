@@ -1,4 +1,4 @@
-import {summary,remaining,parseBank,label,withCorrection} from './core.js';
+import {summary,remaining,parseBank,label,withCorrection,verdictText} from './core.js';
 import {renderSettings,readSettings} from './fields.js';
 /** Locate a named dashboard element. */
 const byId=id=>document.getElementById(id);
@@ -34,15 +34,15 @@ function selectedQuestion() {
  if(!question)throw new Error('Sélectionnez une question présente dans le brouillon JSON.');
  return question;
 }
-/** Show unit controls only for numerical correction. */
-function showUnits(){byId('numeric-options').hidden=byId('grading-mode').value!=='number';}
-/** Load correction fields for the selected draft without saving or altering a running game. */
+/** Load jev criteria and fallback aliases for the selected draft; a legacy answer prefills the true criterion. */
 function renderCorrection() {
- const question=selectedQuestion();byId('grading-mode').value=question.grading_mode||'exact';
- byId('units').value=(question.units||[]).join('\n');byId('require-unit').checked=Boolean(question.require_unit);showUnits();
+ const question=selectedQuestion();
+ byId('criteria-true').value=question.criteria?.true??question.answer??'';
+ byId('criteria-false').value=question.criteria?.false??'';
+ byId('aliases').value=(question.aliases||[]).join('\n');
 }
 /** Build the current tester question from unsaved JSON and correction controls. */
-function correctionDraft(){return withCorrection(selectedQuestion(),byId('grading-mode').value,byId('units').value,byId('require-unit').checked);}
+function correctionDraft(){return withCorrection(selectedQuestion(),byId('criteria-true').value,byId('criteria-false').value,byId('aliases').value);}
 /** Render names using text nodes so participant-controlled labels cannot inject HTML. */
 function renderParticipants(session) {
  const names=(session.players||[]).map(key=>label(session,key));
@@ -102,11 +102,13 @@ async function stop(){byId('notice').textContent='Arrêt demandé…';renderSess
 bind('cancel',stop);bind('stop-now',stop);
 bind('save-settings',async()=>{if(!byId('config').reportValidity())return;await api('settings','PUT',readSettings());byId('settings-status').textContent='Paramètres enregistrés.';});
 bind('save',async()=>renderBank(await api('questions','PUT',parseBank(byId('bank').value))));
-bind('apply-correction',async()=>{const question=correctionDraft();byId('bank').value=JSON.stringify(parseBank(byId('bank').value).map(item=>item.id===question.id?question:item),null,2);byId('verdict').textContent='Mode appliqué au brouillon. Enregistrez les questions pour les prochaines parties.';});
-bind('check',async()=>{const result=await api('test-answer','POST',{question:correctionDraft(),answer:byId('candidate').value,ignore_accents:byId('setting-ignore_accents').checked});byId('verdict').textContent=(result.accepted?`Acceptée · référence « ${result.alias} ». `:'Refusée · ')+result.reason;});
+bind('apply-correction',async()=>{const question=correctionDraft();byId('bank').value=JSON.stringify(parseBank(byId('bank').value).map(item=>item.id===question.id?question:item),null,2);byId('verdict').textContent='Critères appliqués au brouillon. Enregistrez les questions pour les prochaines parties.';});
+bind('check',async()=>{
+ const {ignore_accents,jev_threshold,jev_model}=readSettings();byId('verdict').textContent='Évaluation par jev…';
+ byId('verdict').textContent=verdictText(await api('test-answer','POST',{question:correctionDraft(),answer:byId('candidate').value,ignore_accents,jev_threshold,jev_model}));
+});
 byId('question').addEventListener('change',()=>action(async()=>renderCorrection()));
 byId('bank').addEventListener('change',()=>action(async()=>renderCorrection()));
-byId('grading-mode').addEventListener('change',showUnits);
 bind('resume',async()=>renderSession(await api('resume','POST')));
 bind('inject',async()=>renderSession(await api('inject','POST',{author:byId('author').value,body:byId('reply').value})));
 bind('recover',async()=>renderSession(await api(`recover/${encodeURIComponent(byId('archive').value)}`,'POST')));
