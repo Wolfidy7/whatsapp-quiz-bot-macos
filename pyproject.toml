@@ -2,7 +2,7 @@
 name = "whatsapp-quiz-bot-macos"
 version = "0.1.0"
 requires-python = ">=3.12"
-description = "Local WhatsApp Mac quiz with deterministic grading and JSON persistence"
+description = "Local WhatsApp Mac quiz with jev grading, local fallback and JSON persistence"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=quiz_app --cov-branch --cov-report=term-missing --cov-report=json --cov-fail-under=95"
