@@ -10,6 +10,17 @@ from quiz_app.normalization import normalize as normalize
 
 Scorer = Callable[[Question, dict[str, str]], dict[str, float | None]]
 FALLBACK = "Repli local (jev indisponible) : "
+# Hidden grading guidance: with the bare question, jev accepted entities related to the answer
+# (actor for director, character for author, host country for winner) far above the threshold.
+INSTRUCTIONS = (
+    "Question posée à un joueur de quiz : « {question} »\n"
+    "Bonne réponse attendue : {answer}.\n"
+    "La réponse du joueur est correcte si elle désigne la même chose que la bonne réponse attendue, "
+    "même sous une forme incomplète ou mal écrite : le nom de famille seul, un surnom ou un nom d'usage "
+    "connu, une faute de frappe, une transcription ou une traduction différente sont corrects. "
+    "Elle est fausse si elle désigne une autre entité, même étroitement liée à la bonne réponse "
+    "(acteur, réalisateur, auteur, personnage, pays, club, lieu, équipe adverse)."
+)
 
 
 @dataclass(frozen=True)
@@ -29,8 +40,9 @@ def offline(question: Question, answers: dict[str, str]) -> dict[str, float | No
 
 
 def noul_question(question: Question) -> NoulQuestion:
-    """Map a bank question to jev: the question is the instructions; aliases are never sent."""
-    return NoulQuestion(question.id, question.question, question.criteria.true, question.criteria.false)
+    """Map a bank question to jev with hidden grading guidance; aliases are never sent."""
+    instructions = INSTRUCTIONS.format(question=question.question, answer=question.criteria.true)
+    return NoulQuestion(question.id, instructions, question.criteria.true, question.criteria.false)
 
 
 def jev_scorer(api_key: str, model: str) -> Scorer:
