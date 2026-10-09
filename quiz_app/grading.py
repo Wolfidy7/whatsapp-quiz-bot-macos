@@ -19,7 +19,9 @@ INSTRUCTIONS = (
     "même sous une forme incomplète ou mal écrite : le nom de famille seul, un surnom ou un nom d'usage "
     "connu, une faute de frappe, une transcription ou une traduction différente sont corrects. "
     "Elle est fausse si elle désigne une autre entité, même étroitement liée à la bonne réponse "
-    "(acteur, réalisateur, auteur, personnage, pays, club, lieu, équipe adverse)."
+    "(acteur, réalisateur, auteur, personnage, pays, club, lieu, équipe adverse). "
+    "Elle est aussi fausse si elle se contente de reprendre un nom ou un élément déjà cité dans la "
+    "question, ou le titre de l'œuvre au lieu de ce qui est demandé."
 )
 
 

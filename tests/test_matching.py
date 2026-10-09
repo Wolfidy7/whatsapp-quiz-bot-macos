@@ -64,6 +64,7 @@ def test_jev_never_receives_aliases():
         "Question posée à un joueur de quiz : « Qui est le président actuel du Sénégal ? »\n"
         "Bonne réponse attendue : Diomaye Faye.\n")
     assert "autre entité, même étroitement liée" in noul.instructions
+    assert noul.instructions.endswith("le titre de l'œuvre au lieu de ce qui est demandé.")
     assert "Bassirou" not in repr(noul)
 
 
