@@ -5,19 +5,21 @@ export const fields = [
  ['max_questions','Nombre de questions','number',1,1000],['registration_seconds','Inscriptions (secondes)','number',1,3600],
  ['question_seconds','Temps par question (secondes)','number',1,3600],['interval_seconds','Pause entre questions (secondes)','number',0,3600],
  ['max_points','Premier : points maximum','number',1,100000],['min_points','Dernier : points minimum','number',1,100000],
+ ['jev_threshold','Seuil de confiance jev (0 à 1)','number',0,1],
  ['ignore_accents','Accepter les réponses sans accents','checkbox'],
  ['join_command','Commande d’inscription','text',null,null,'advanced'],['answer_prefix','Préfixe des réponses','text',null,null,'advanced'],
  ['poll_seconds','Lecture des réponses (secondes)','number',0.1,30,'advanced'],
  ['message_chunk_size','Longueur maximale des messages','number',200,4000,'advanced'],
  ['max_history_pages','Limite de lecture du diagnostic','number',1,10000,'advanced'],
  ['port','Port du serveur local','number',1024,65535,'advanced'],
+ ['jev_model','Modèle jev','text',null,null,'advanced'],
  ['whatsapp_database','Fichier local de WhatsApp','text',null,null,'advanced']
 ];
 /** Create one typed input from its definition and current local value. */
 function settingInput(key,type,min,max,value) {
  const input=document.createElement('input');input.id=`setting-${key}`;input.name=key;input.type=type;
  if(type==='checkbox')input.checked=value;else{input.value=value;input.required=true;}
- if(min!==undefined&&min!==null){input.min=min;input.max=max;input.step=key==='poll_seconds'?'any':'1';}
+ if(min!==undefined&&min!==null){input.min=min;input.max=max;input.step=['poll_seconds','jev_threshold'].includes(key)?'any':'1';}
  return input;
 }
 /** Populate form inputs once; polling never overwrites an operator’s edits. */
