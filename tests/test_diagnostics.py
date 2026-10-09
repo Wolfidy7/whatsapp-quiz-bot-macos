@@ -42,7 +42,7 @@ def test_probe_readonly(capsys):
 
 def test_coverage_gate(tmp_path):
     path=tmp_path/'coverage.json'
-    report={'totals':{'missing_lines':0,'covered_branches':9,'num_branches':10},'files':{name:{'summary':{'missing_branches':0}} for name in ['quiz_app/grading.py','quiz_app/normalization.py','quiz_app/numeric.py','quiz_app/scoring.py']}}
+    report={'totals':{'missing_lines':0,'covered_branches':9,'num_branches':10},'files':{name:{'summary':{'missing_branches':0}} for name in ['quiz_app/grading.py','quiz_app/jev.py','quiz_app/normalization.py','quiz_app/numeric.py','quiz_app/scoring.py']}}
     path.write_text(json.dumps(report));verify(path)
     for totals in [{'missing_lines':1},{'covered_branches':8}]:
         changed=json.loads(json.dumps(report));changed['totals'].update(totals);path.write_text(json.dumps(changed))

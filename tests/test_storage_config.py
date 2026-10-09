@@ -101,3 +101,28 @@ def test_web_settings_atomic_roundtrip_and_failure(tmp_path,settings):
     with patch('quiz_app.config.os.replace',side_effect=OSError('disk')):
         with pytest.raises(QuizError,match='enregistrer'):save_settings(path,settings)
     assert path.read_bytes()==before and not list(tmp_path.glob('.settings-*'))
+
+
+def test_jev_key_stays_outside_settings_and_survives_saves(tmp_path,settings):
+    from quiz_app.config import save_settings,load_api_key
+    path=tmp_path/'.env'
+    assert load_api_key(path)=='' and settings.jev_threshold==0.8 and settings.jev_model=='jev-latest'
+    save_settings(path,settings)
+    assert load_api_key(path)==''
+    path.write_text(path.read_text().replace('JEV_API_KEY=""','JEV_API_KEY="sk-secret"'))
+    loaded=load_settings(path)
+    assert 'jev_api_key' not in loaded.model_dump() and 'sk-secret' not in loaded.model_dump_json()
+    loaded.jev_threshold=0.65
+    save_settings(path,loaded)
+    assert load_api_key(path)=='sk-secret' and load_settings(path).jev_threshold==0.65
+
+
+def test_jev_settings_bounds_and_unreadable_key(tmp_path):
+    base=Path(__file__).parents[1]/'.env.example'
+    for line in ('JEV_THRESHOLD=1.5','JEV_THRESHOLD=-0.1','JEV_MODEL="bad model"'):
+        path=tmp_path/'.env';path.write_text('\n'.join(row for row in base.read_text().splitlines() if not row.startswith(line.split('=')[0]+'='))+'\n'+line+'\n')
+        with pytest.raises(QuizError):load_settings(path)
+    from quiz_app.config import load_api_key
+    path=tmp_path/'broken';path.write_text('X')
+    with pytest.raises(QuizError):load_api_key(path)
+    with pytest.raises(QuizError):load_api_key(tmp_path)

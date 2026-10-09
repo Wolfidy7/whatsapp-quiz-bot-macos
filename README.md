@@ -64,6 +64,9 @@ Use **Arrêter** in the fixed header or beside **Démarrer** to cancel at any st
 | `WHATSAPP_DATABASE` | Default WhatsApp group-container path | Existing local database; opened read-only |
 | `MESSAGE_CHUNK_SIZE` | 3000 | Maximum visible outgoing message size |
 | `PORT` | 8765 | Local HTTP port |
+| `JEV_THRESHOLD` | 0.8 | Minimum jev probability (0–1) to accept an answer |
+| `JEV_MODEL` | `jev-latest` | TypeSafe jev model sent with each evaluation |
+| `JEV_API_KEY` | `""` | Private TypeSafe key, read only from `.env`; never shown in the dashboard, stored in sessions or overwritten by settings saves. Empty means local alias fallback only |
 
 Use double quotes around text values. Invalid fields, duplicate keys, conflicting commands and inverted point limits fail validation explicitly.
 
@@ -286,6 +289,7 @@ Accessibility pagination remains a diagnostic fallback prototype. Its UI cells c
 | `quiz_app/grading.py` | Command extraction, correction modes and matching evidence |
 | `quiz_app/normalization.py` | Shared Unicode, whitespace, case and punctuation normalization |
 | `quiz_app/numeric.py` | Exact decimal parsing and declared-unit validation |
+| `quiz_app/jev.py` | TypeSafe jev Noul client: request contract, bounded retries and parallel scoring |
 | `quiz_app/scoring.py` | Decimal half-up points and tied standings |
 | `quiz_app/live.py` | Read-only provisional scores, participant labels and confirmed totals |
 | `quiz_app/history.py` | Boundaries, page overlap and immutable observations |
