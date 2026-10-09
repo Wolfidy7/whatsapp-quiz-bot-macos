@@ -90,9 +90,11 @@ When a round closes, each player's first answer is sent to jev as a separate eva
 
 | jev field | Source |
 | --- | --- |
-| `instructions` | `question` |
+| `instructions` | A fixed hidden guidance built from `question` and `criteria.true` (see below) |
 | `criteria.true` / `criteria.false` | `criteria` (both required) |
 | `state` | The player's raw answer |
+
+The guidance is never shown to players. It states the expected answer, tolerates incomplete or misspelled forms of the same name (surname alone, known nickname, typo, transcription or translation) and rejects any other entity, even one closely related to the answer: actor, director, author, character, country, club, place or opposing team. With the bare question, jev accepted such related entities well above the threshold. On a 100-question sport, cinema and manga batch, 128 related-entity traps were accepted. With the guidance, none were, and correct evaluations rose from 88.8 % to 97.4 %. The trade-off is that a few more misspelled correct answers are refused.
 
 jev returns a probability between 0 and 1. The answer is accepted when it is **greater than or equal to `JEV_THRESHOLD`** (0.8 by default), so you no longer list every acceptable spelling. `criteria.true` is also the answer revealed to players after STOP. Keep it a readable answer rather than a grading instruction, and put nuances in `criteria.false`.
 
