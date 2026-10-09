@@ -19,7 +19,7 @@ from quiz_app.config import load_api_key, load_settings, save_settings
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.engine import Engine, new_session
 from quiz_app.errors import QuizError
-from quiz_app.grading import Scorer, evaluate_answer, jev_scorer
+from quiz_app.grading import Scorer, evaluate_answer, jev_scorer, local_verdict
 from quiz_app.live import live_view
 from quiz_app.models import Question, Settings, StrictModel
 from quiz_app.repository import load_bank, load_session, save_bank
@@ -308,7 +308,9 @@ def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
                 "jev_model": value.jev_model or saved.jev_model,
             }
         )
-        score = controller.scorer(settings)(value.question, {"answer": value.answer})["answer"]
+        score = None
+        if local_verdict(value.question, value.answer, settings.ignore_accents) is None:
+            score = controller.scorer(settings)(value.question, {"answer": value.answer})["answer"]
         verdict = evaluate_answer(
             value.question, value.answer, score, settings.jev_threshold, settings.ignore_accents
         )

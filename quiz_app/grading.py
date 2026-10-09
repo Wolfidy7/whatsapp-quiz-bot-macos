@@ -1,5 +1,6 @@
-"""jev threshold decisions, with exact alias matching as the explicit offline fallback."""
+"""Local exact rules, then jev threshold decisions, with alias matching as the offline fallback."""
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -10,6 +11,7 @@ from quiz_app.normalization import normalize as normalize
 
 Scorer = Callable[[Question, dict[str, str]], dict[str, float | None]]
 FALLBACK = "Repli local (jev indisponible) : "
+LOCAL = "Règle locale : "
 # Hidden grading guidance: with the bare question, jev accepted entities related to the answer
 # (actor for director, character for author, host country for winner) far above the threshold.
 INSTRUCTIONS = (
@@ -33,7 +35,7 @@ class Verdict:
     alias: str | None
     reason: str
     score: float | None = None
-    source: Literal["jev", "fallback"] = "fallback"
+    source: Literal["jev", "fallback", "local"] = "fallback"
 
 
 def offline(question: Question, answers: dict[str, str]) -> dict[str, float | None]:
@@ -55,6 +57,19 @@ def jev_scorer(api_key: str, model: str) -> Scorer:
     return lambda question, answers: client.score_many(noul_question(question), answers)
 
 
+def local_verdict(question: Question, answer: str, ignore_accents: bool = True) -> Verdict | None:
+    """Decide without jev: accept an exact reference or alias, reject a copy of a question passage."""
+    value = normalize(answer, ignore_accents)
+    if not value:
+        return None
+    for alias in [question.criteria.true, *question.aliases]:
+        if value == normalize(alias, ignore_accents):
+            return Verdict(True, alias, LOCAL + "correspondance exacte avec une référence.", source="local")
+    if re.search(rf"(?<!\w){re.escape(value)}(?!\w)", normalize(question.question, ignore_accents)):
+        return Verdict(False, None, LOCAL + "la réponse reprend un élément de la question.", source="local")
+    return None
+
+
 def fallback_verdict(question: Question, answer: str, ignore_accents: bool = True) -> Verdict:
     """Accept only a complete normalized match with the true criterion or a declared alias."""
     value = normalize(answer, ignore_accents)
@@ -68,7 +83,10 @@ def fallback_verdict(question: Question, answer: str, ignore_accents: bool = Tru
 def evaluate_answer(
     question: Question, answer: str, score: float | None, threshold: float, ignore_accents: bool = True
 ) -> Verdict:
-    """Accept when the jev probability reaches the threshold; fall back locally without a score."""
+    """Apply local rules first, then the jev threshold; fall back locally without a score."""
+    local = local_verdict(question, answer, ignore_accents)
+    if local:
+        return local
     if score is None:
         return fallback_verdict(question, answer, ignore_accents)
     accepted = score >= threshold

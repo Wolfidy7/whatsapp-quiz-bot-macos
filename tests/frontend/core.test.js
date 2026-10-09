@@ -31,6 +31,7 @@ it('copies jev criteria and fallback aliases, dropping retired correction fields
 it('explains jev and fallback grading',()=>{
  expect(grading({source:'jev',score:0.876})).toBe(' · jev 0.88');
  expect(grading({source:'fallback',score:null})).toBe(' · repli local');
+ expect(grading({source:'local',score:null})).toBe(' · règle locale');
  expect(grading({})).toBe('');
  expect(summary({id:'t',rounds:[{results:[{player:'A',answer:'Faye',points:100,source:'jev',score:0.9},{player:'B',answer:'Sall',points:0,source:'fallback'}]}]}))
   .toContain('A: 100 points · Faye · jev 0.90\n1. B: 0 points · Sall · repli local');

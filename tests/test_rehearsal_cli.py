@@ -44,7 +44,7 @@ def test_real_rehearsal_command_is_fully_simulated(tmp_path,question,use_overrid
     assert session.settings.max_players==5 and session.settings.registration_seconds==1
     assert session.settings.question_seconds==1
     assert [[r.points for r in q.results] for q in session.rounds]==[[100,20]]*3
-    assert {r.source for q in session.rounds for r in q.results}=={'fallback'}
+    assert {r.source for q in session.rounds for r in q.results}=={'local'}
     assert not (tmp_path/'data/transport-validation.json').exists()
     args.players=0
     with pytest.raises(QuizError,match='settings'):play(args,tmp_path)
