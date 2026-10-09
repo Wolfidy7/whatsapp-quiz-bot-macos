@@ -1,153 +1,160 @@
-"""Correction contracts: full names, exact decimals, safe defaults and frozen snapshots."""
+"""Correction contracts: jev threshold, explicit local fallback, safe defaults and frozen snapshots."""
+
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from quiz_app.app import create_app
-from quiz_app.engine import Engine, new_session
-from quiz_app.grading import evaluate_answer, match_answer
+from quiz_app.engine import Engine, grade_answers, new_session
+from quiz_app.grading import evaluate_answer, fallback_verdict, jev_scorer, noul_question, offline
 from quiz_app.live import live_view
 from quiz_app.models import Question
 from quiz_app.repository import load_bank, load_session, save_bank
 from quiz_app.transport import Simulator
 
 
-def rule(answer="Harry Potter", **options):
-    return Question(**{"id": "character", "question": "Qui est ce personnage ?", "answer": answer, **options})
+def rule(true="Diomaye Faye", **options):
+    return Question(**{
+        "id": "fact1_senegal_president", "question": "Qui est le président actuel du Sénégal ?",
+        "criteria": {"true": true, "false": "Toute autre réponse"}, **options,
+    })
 
 
-@pytest.mark.parametrize("answer,accepted", [
-    ("Potter Harry", True), ("  POTTER\nHarry ! ", True), ("Harry Potter", True),
-    ("Harry", False), ("Potter", False), ("Harry Poter", False), ("pas Harry Potter", False),
-    ("Harry Potter ou Ron Weasley", False), ("Harry Harry Potter", False), ("", False),
+class FakeJev:
+    """Deterministic jev stand-in: a probability per normalized answer, None means unavailable."""
+
+    def __init__(self, scores):
+        self.scores, self.calls = scores, []
+
+    def __call__(self, question, answers):
+        self.calls.append((question.id, dict(answers)))
+        return {key: self.scores.get(answer.casefold()) for key, answer in answers.items()}
+
+
+@pytest.mark.parametrize("score,accepted,sign", [(0.8, True, "≥"), (0.95, True, "≥"), (0.79, False, "<"), (0.0, False, "<")])
+def test_jev_threshold_is_inclusive(score, accepted, sign):
+    verdict = evaluate_answer(rule(aliases=["Bassirou Diomaye Faye"]), "Diomaye Faye", score, 0.8)
+    assert (verdict.accepted, verdict.source, verdict.score, verdict.alias) == (accepted, "jev", score, None)
+    assert verdict.reason == f"Score jev {score:.3f} {sign} seuil 0.800."
+
+
+@pytest.mark.parametrize("answer,accepted,alias", [
+    ("  diomaye FAYE ! ", True, "Diomaye Faye"), ("Bassirou Diomaye Faye", True, "Bassirou Diomaye Faye"),
+    ("Faye Diomaye", False, None), ("Diomaye", False, None), ("", False, None),
 ])
-def test_complete_name_order(answer, accepted):
-    question = rule(grading_mode="person_name")
-    verdict = evaluate_answer(question, answer)
-    assert verdict.accepted is accepted
-    assert verdict.alias == ("Harry Potter" if accepted else None)
-    assert verdict.reason
+def test_fallback_uses_true_criterion_and_aliases_exactly(answer, accepted, alias):
+    verdict = evaluate_answer(rule(aliases=["Bassirou Diomaye Faye"]), answer, None, 0.8)
+    assert (verdict.accepted, verdict.alias, verdict.source, verdict.score) == (accepted, alias, "fallback", None)
+    assert verdict.reason.startswith("Repli local (jev indisponible) : ")
 
 
-def test_names_repeats_punctuation_aliases_and_accents():
-    repeated = rule("Tony Tony Chopper", grading_mode="person_name")
-    assert match_answer(repeated, "Chopper Tony Tony")[0]
-    assert not match_answer(repeated, "Chopper Tony")[0]
-    accented = rule("Émile Zola", aliases=["Émile-Édouard Zola"], grading_mode="person_name")
-    assert match_answer(accented, "zola emile") == (True, "Émile Zola")
-    assert not match_answer(accented, "zola emile", False)[0]
-    assert match_answer(accented, "Zola E\u0301mile", False)[0]
-    assert match_answer(accented, "Zola Émile-Édouard") == (True, "Émile-Édouard Zola")
-    assert not match_answer(accented, "Zola Émile Édouard")[0]
-    assert match_answer(rule("Jean d’Arc", grading_mode="person_name"), "d'Arc Jean")[0]
-    assert not match_answer(rule("Jean d'Arc", grading_mode="person_name"), "Arc Jean d")[0]
-    assert not match_answer(rule(), "Potter Harry")[0]
-    assert "ordre des mots" in evaluate_answer(rule(grading_mode="person_name"), "Potter Harry").reason
-    assert "exacte" in evaluate_answer(rule(grading_mode="person_name"), "Harry Potter").reason
+def test_fallback_accents_follow_the_setting():
+    question = rule("Été")
+    assert fallback_verdict(question, "ete").accepted
+    assert not fallback_verdict(question, "ete", False).accepted
 
 
-@pytest.mark.parametrize("answer,accepted", [
-    ("12", True), ("12.00", True), ("+012,000!", True), ("12,0 KM", True),
-    ("12 kilomètres", True), ("12kilometres", True), ("12.000000000000000001", False),
-    ("12 m", False), ("1 2", False), ("douze", False), ("12 ou 13", False),
-    ("pas 12", False), ("NaN", False), ("Infinity", False), ("1.2e1", False),
-    ("24/2", False), ("12 + 0", False), ("", False), ("1,200", False),
+def test_jev_never_receives_aliases():
+    question = rule(aliases=["Bassirou Diomaye Faye"])
+    noul = noul_question(question)
+    assert (noul.id, noul.instructions, noul.true, noul.false) == (
+        "fact1_senegal_president", "Qui est le président actuel du Sénégal ?", "Diomaye Faye", "Toute autre réponse")
+    assert "Bassirou" not in repr(noul)
+
+
+def test_scorer_factory(monkeypatch):
+    assert jev_scorer("", "jev-latest") is offline
+    assert offline(rule(), {"a": "x", "b": "y"}) == {"a": None, "b": None}
+    seen = []
+
+    class Client:
+        def __init__(self, key, model):
+            seen.append((key, model))
+
+        def score_many(self, noul, answers):
+            seen.append((noul.true, answers))
+            return {key: 0.9 for key in answers}
+
+    monkeypatch.setattr("quiz_app.grading.JevClient", Client)
+    assert jev_scorer("sk", "jev-1")(rule(), {"a": "Faye"}) == {"a": 0.9}
+    assert seen == [("sk", "jev-1"), ("Diomaye Faye", {"a": "Faye"})]
+
+
+@pytest.mark.parametrize("value", [
+    {"criteria": {"true": "Diomaye Faye"}}, {"criteria": {"false": "Autre"}},
+    {"criteria": {"true": "  ", "false": "Autre"}}, {"criteria": {"true": "Faye", "false": " "}},
+    {"criteria": {"true": ".!?", "false": "Autre"}}, {"criteria": {"true": "Faye", "false": "Autre", "x": 1}},
+    {"aliases": ["   "]}, {"aliases": ["!!"]}, {"answer": "Faye"}, {"grading_mode": "exact"},
 ])
-def test_exact_numbers_and_optional_units(answer, accepted):
-    verdict = evaluate_answer(rule("12", grading_mode="number", units=["km", "kilomètres"]), answer)
-    assert verdict.accepted is accepted
-    assert verdict.alias == ("12" if accepted else None)
-    assert verdict.reason
-
-
-def test_required_units_negative_zero_and_decimal_precision():
-    question = rule("-5 kg", grading_mode="number", units=["kg", "kilogrammes"], require_unit=True)
-    assert match_answer(question, "-05,000kilogrammes") == (True, "-5 kg")
-    for answer in ["-5", "5 kg", "-5 g", "-5 kg kg"]:
-        assert not match_answer(question, answer)[0]
-    assert match_answer(rule("0", grading_mode="number"), "-0.00")[0]
-    assert match_answer(rule("0.5", grading_mode="number"), ",50")[0]
-    assert not match_answer(rule("0.5", grading_mode="number"), "0.50 m")[0]
-    alias = rule("12", aliases=["13"], grading_mode="number")
-    assert match_answer(alias, "13,00") == (True, "13")
-    precise = rule("123456789012345678901234567890.123456789", grading_mode="number")
-    assert match_answer(precise, "123456789012345678901234567890,1234567890")[0]
-    assert not match_answer(precise, "123456789012345678901234567891.123456789")[0]
-    accented = rule("12 mètres", grading_mode="number", units=["mètres"], require_unit=True)
-    assert match_answer(accented, "12 metres")[0]
-    assert not match_answer(accented, "12 metres", False)[0]
-
-
-@pytest.mark.parametrize("options", [
-    {"grading_mode": "fuzzy"}, {"answer": ".!?"}, {"aliases": ["   "]}, {"aliases": ["!!"]},
-    {"units": ["km"]}, {"require_unit": True},
-    {"grading_mode": "number", "answer": "douze"},
-    {"grading_mode": "number", "answer": "12", "aliases": ["douze"]},
-    {"grading_mode": "number", "answer": "12", "units": [""]},
-    {"grading_mode": "number", "answer": "12", "units": ["!!"]},
-    {"grading_mode": "number", "answer": "12", "units": ["x" * 41]},
-    {"grading_mode": "number", "answer": "12", "require_unit": True},
-    {"grading_mode": "number", "answer": "12", "units": ["km"], "require_unit": True},
-    {"grading_mode": "number", "answer": "12 m", "units": ["km"]},
-])
-def test_invalid_rules_rejected(options):
+def test_invalid_questions_rejected(value):
+    base = {"id": "q", "question": "Qui ?", "criteria": {"true": "Faye", "false": "Autre"}}
     with pytest.raises(ValidationError):
-        rule(**options)
+        Question(**{**base, **value})
 
 
-def test_editor_storage_and_snapshot(tmp_path, settings):
-    from pathlib import Path
+def test_grading_mixes_jev_and_fallback_and_ranks_in_order(settings):
+    scorer = FakeJev({"bassirou": 0.91, "macky sall": 0.02, "diomaye faye": None})
+    first = {"A": "Macky Sall", "B": "Bassirou", "C": "Diomaye Faye", "D": "Faye Diomaye"}
+    settings.max_players = 5
+    results = grade_answers(first, ["A", "B", "C", "D", "E"], rule(), settings, scorer)
+    assert scorer.calls == [("fact1_senegal_president", first)]
+    assert [(r.player, r.accepted, r.rank, r.points, r.source, r.score) for r in results] == [
+        ("A", False, None, 0, "jev", 0.02), ("B", True, 1, 100, "jev", 0.91),
+        ("C", True, 2, 80, "fallback", None), ("D", False, None, 0, "fallback", None),
+        ("E", False, None, 0, "", None),
+    ]
+    assert grade_answers({}, ["A"], rule(), settings, scorer)[0].source == "" and len(scorer.calls) == 1
+
+
+def test_editor_storage_and_jev_tester(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text((Path(__file__).parents[1] / ".env.example").read_text())
-    name = rule(grading_mode="person_name")
-    number = rule("12 km", id="distance", grading_mode="number", units=["km"], require_unit=True)
+    calls = []
+
+    def factory(key, model):
+        calls.append((key, model))
+        return FakeJev({"bassirou": 0.85})
+
+    monkeypatch.setattr("quiz_app.app.jev_scorer", factory)
+    question = rule(aliases=["Bassirou Diomaye Faye"])
     with TestClient(create_app(tmp_path, background=False)) as client:
-        saved = client.put("/api/questions", json=[name.model_dump(), number.model_dump()])
-        assert saved.status_code == 200
-        assert load_bank(tmp_path / "data/questions.json") == [name, number]
-        session = client.post("/api/start", json={"mode": "simulation", "question_ids": [name.id]}).json()
-        assert session["questions"][0]["grading_mode"] == "person_name"
-        candidate = client.post("/api/test-answer", json={"question": name.model_dump(), "answer": "Potter Harry"}).json()
-        assert candidate["accepted"] and candidate["alias"] == "Harry Potter"
-        assert "ordre des mots" in candidate["reason"]
-        numeric = client.post("/api/test-answer", json={"question": number.model_dump(), "answer": "12,000 km"}).json()
-        assert numeric["accepted"] and "numérique" in numeric["reason"]
-        assert client.post("/api/test-answer", json={"question": number.model_dump(), "answer": "12"}).json()["accepted"] is False
-        invalid = dict(number.model_dump(), answer="douze")
-        assert client.put("/api/questions", json=[invalid]).status_code == 422
-        assert client.post("/api/test-answer", json={"question": invalid, "answer": "12"}).status_code == 422
-        exact = rule()
-        assert client.put("/api/questions", json=[exact.model_dump()]).status_code == 200
-        assert client.get("/api/session").json()["questions"][0]["grading_mode"] == "person_name"
-        assert load_session(tmp_path / "data/sessions" / f"{session['id']}.json").questions == [name]
-    # Older banks remain exact without introducing a migration or semantic guess.
-    saved = save_bank(tmp_path / "legacy.json", [{"id": "old", "question": "Who?", "answer": "Harry Potter"}])
-    assert saved[0].grading_mode == "exact"
-    assert not match_answer(saved[0], "Potter Harry")[0]
+        assert client.put("/api/questions", json=[question.model_dump()]).status_code == 200
+        assert load_bank(tmp_path / "data/questions.json") == [question]
+        trial = {"question": question.model_dump(), "answer": "Bassirou"}
+        assert client.post("/api/test-answer", json=trial).json() == {
+            "accepted": True, "alias": None, "reason": "Score jev 0.850 ≥ seuil 0.800.", "score": 0.85, "source": "jev"}
+        strict = client.post("/api/test-answer", json=dict(trial, jev_threshold=0.9, jev_model="jev-2")).json()
+        assert strict["accepted"] is False and calls[-1] == ("", "jev-2")
+        offline_trial = client.post("/api/test-answer", json=dict(trial, answer="Bassirou Diomaye Faye")).json()
+        assert offline_trial["accepted"] and offline_trial["source"] == "fallback"
+        for invalid in ({"jev_threshold": 1.5}, {"jev_model": "bad model"}):
+            assert client.post("/api/test-answer", json=dict(trial, **invalid)).status_code == 422
+        legacy = {"id": "old", "question": "Qui ?", "answer": "Faye"}
+        assert client.put("/api/questions", json=[legacy]).status_code == 422
+    assert calls[0] == ("", "jev-latest")
+    with pytest.raises(Exception, match="BANK_INVALID|criteria"):
+        save_bank(tmp_path / "legacy.json", [{"id": "old", "question": "Qui ?", "answer": "Faye"}])
 
 
-def test_simulation_scores_inverted_names_and_numeric_values(tmp_path, settings):
+def test_simulation_scores_with_jev_at_stop_and_locally_while_open(tmp_path, settings):
     now = [100.]
     simulator = Simulator()
-    questions = [rule(grading_mode="person_name"), rule("12", id="number", grading_mode="number")]
-    session = new_session(settings, questions, "simulation")
-    engine = Engine(session, simulator, tmp_path / "game.json", lambda: now[0])
+    scorer = FakeJev({"bassirou": 0.9, "macky": 0.1})
+    session = new_session(settings, [rule()], "simulation")
+    engine = Engine(session, simulator, tmp_path / "game.json", lambda: now[0], scorer=scorer)
     engine.begin()
     for name in ["Camille", "Robin"]:
         simulator.inject(name, "!join")
     now[0] = session.deadline
     engine.tick()
-    for index, answers in enumerate([("Potter Harry", "Harry Potter"), ("12,00", "12.0")]):
-        for player, answer in zip(session.players, answers):
-            simulator.inject(player, f"!r {answer}")
-        engine.tick()
-        preview = live_view(session)["ranking"]
-        assert [row["points"] for row in preview] == [100 * (index + 1), 20 * (index + 1)]
-        now[0] = session.deadline
-        engine.tick()
-        assert [result.points for result in session.rounds[index].results] == [100, 20]
-        assert all(result.reason for result in session.rounds[index].results)
-        now[0] = session.deadline
-        engine.tick()
-    assert session.phase == "finished"
+    for player, answer in zip(session.players, ["Macky", "Bassirou"]):
+        simulator.inject(player, f"!r {answer}")
+    engine.tick()
+    assert [row["points"] for row in live_view(session)["ranking"]] == [0, 0] and scorer.calls == []
+    now[0] = session.deadline
+    engine.tick()
+    assert len(scorer.calls) == 1
+    assert [(r.points, r.source) for r in session.rounds[0].results] == [(0, "jev"), (100, "jev")]
+    assert "🎯 *Diomaye Faye*" in simulator.messages[-1].body
     assert load_session(engine.path) == session

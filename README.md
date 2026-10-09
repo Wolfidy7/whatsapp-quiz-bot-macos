@@ -1,6 +1,6 @@
 # WhatsApp Quiz Studio for macOS
 
-A local quiz host for WhatsApp Desktop: explicit aliases, chronological first answers, transparent rank-based points and private JSON storage. There is **no LLM, WhatsApp Web or cloud service**. Application data stays in JSON. Incoming messages are read from WhatsApp Desktop’s existing local SQLite database through read-only connections; readable sender names are resolved from the adjacent native ContactsV2.sqlite when available. The bot never writes to either database.
+A local quiz host for WhatsApp Desktop: answers graded by the TypeSafe jev decision model with a local alias fallback, chronological first answers, transparent rank-based points and private JSON storage. There is no WhatsApp Web; the only cloud call is the jev evaluation of each player's answer text. Application data stays in JSON. Incoming messages are read from WhatsApp Desktop’s existing local SQLite database through read-only connections; readable sender names are resolved from the adjacent native ContactsV2.sqlite when available. The bot never writes to either database.
 
 The application includes a French local dashboard with editable game settings, Start/Stop controls, automatic participant names and a live leaderboard, plus a question editor, an answer tester, a deterministic simulator, direct native message reading, an accessibility sender, durable game snapshots and explicit incident recovery. **Validated native gameplay is gated by a controlled transport test; a separate, explicit real-rehearsal mode is available for testing.** Direct reading has recovered 100 local records without scrolling, preserving their authors, timestamps and native sequence. That diagnostic does not replace a controlled question/STOP test.
 
@@ -72,56 +72,35 @@ Use double quotes around text values. Invalid fields, duplicate keys, conflictin
 
 ## Questions and correction
 
-The JSON editor accepts a nonempty array with unique stable IDs:
+Answers are graded by **jev**, TypeSafe's decision model, through its [Noul](https://docs.typesafe.ai/primitives/Noul) primitive. The JSON editor accepts a nonempty array with unique stable IDs:
 
 ```json
 [
   {
-    "id": "capital",
-    "question": "What is the capital of France?",
-    "answer": "Paris",
-    "aliases": ["Ville de Paris"],
-    "explanation": "Paris is the capital of France."
+    "id": "fact1_senegal_president",
+    "question": "Qui est le président actuel du Sénégal ?",
+    "criteria": {"true": "Diomaye Faye", "false": "Toute autre réponse"},
+    "aliases": ["Bassirou Diomaye Faye"],
+    "explanation": "Bassirou Diomaye Faye est président depuis avril 2024."
   }
 ]
 ```
 
-Save, import or export the bank from the dashboard. Under **Gérer la banque de questions**, select a question and choose its correction mode. Click **Appliquer au brouillon JSON**, then **Enregistrer les questions** to use it in future games. The tester uses the selected draft question, its displayed correction options and the form's accent setting, including unsaved changes. It shows the matching official answer or alias and the reason for acceptance or rejection. Saving a bank never changes a running game's frozen rules or previously awarded points.
+When a round closes, each player's first answer is sent to jev as a separate evaluation, all in parallel:
 
-Correction normalizes Unicode, letter case, whitespace and curly apostrophes. Accent removal is optional. Common terminal punctuation is removed, while `C++`, `C#` and `-5` remain significant. There is no fuzzy spelling correction or inferred semantic similarity. Choose one explicit `grading_mode` per question:
+| jev field | Source |
+| --- | --- |
+| `instructions` | `question` |
+| `criteria.true` / `criteria.false` | `criteria` (both required) |
+| `state` | The player's raw answer |
 
-| Mode | Rule | Example |
-| --- | --- | --- |
-| `exact` (default) | Complete equality with the answer or a declared alias after normalization | `PARIS!` matches `Paris`; `Paris France` does not |
-| `person_name` | Exactly the same words as a full answer or alias, including repeated words, in any order | `Potter Harry` matches `Harry Potter`; `Harry`, `Harry Harry Potter` and `pas Harry Potter` do not |
-| `number` | Exact decimal equality with a reference and an allowed unit, with no numeric tolerance | `12,00 km` matches `12 km` if `km` is declared |
+jev returns a probability between 0 and 1. The answer is accepted when it is **greater than or equal to `JEV_THRESHOLD`** (0.8 by default), so you no longer list every acceptable spelling. `criteria.true` is also the answer revealed to players after STOP. Keep it a readable answer rather than a grading instruction, and put nuances in `criteria.false`.
 
-Old questions without `grading_mode` remain `exact`. Set `person_name` only for names of people or characters; it does not infer that a surname alone is sufficient. Add a short name explicitly to `aliases` if you want to accept it. Internal apostrophes and hyphens remain significant, and words cannot be added or dropped. Typos, incomplete answers, negations and multiple alternatives remain rejected unless the complete submitted form is an explicitly declared alias.
+**Local fallback.** `aliases` are never sent to jev. They are used only when jev cannot score an answer: missing `JEV_API_KEY`, network error or timeout, authentication or validation error, or rate limit or overload after three attempts. The fallback then accepts only a complete match with `criteria.true` or an alias, after normalization. Normalization covers Unicode, case, whitespace, curly apostrophes, terminal punctuation and, optionally, accents. The fallback applies per answer, so a single round can mix jev and fallback grading. Each result stores its `source` (`jev` or `fallback`), the jev `score` and a readable reason, and the dashboard displays them. Player announcements are unchanged.
 
-For `number`, use `units` to list equivalent spellings of the expected unit, and `require_unit` to require one. Empty `units` accepts only bare numbers. When units are declared but not required, both bare values and values with a declared unit are accepted. Official answers and aliases must also be valid numeric forms respecting this rule. The validator rejects conflicting settings and malformed references:
+Open-round points on the dashboard are **provisional and use the local fallback only**. jev is called once per answer when the round closes, so dashboard refreshes never call it and it never delays the STOP message.
 
-```json
-[
-  {
-    "id": "wizard",
-    "question": "Which character attends Hogwarts and has a lightning-shaped scar?",
-    "answer": "Harry Potter",
-    "grading_mode": "person_name",
-    "aliases": []
-  },
-  {
-    "id": "distance",
-    "question": "What is the distance in kilometres?",
-    "answer": "12 km",
-    "grading_mode": "number",
-    "units": ["km", "kilomètres"],
-    "require_unit": true,
-    "aliases": []
-  }
-]
-```
-
-Numbers use Python `Decimal`, preserving exact precision rather than rounding floats. A comma or dot denotes the decimal separator (`1,200` means `1.2`). Signs and leading zeroes are accepted. There are no thousands separators, scientific notation, fractions, expressions, unit conversions or conversion of written-out numbers. Keep `exact` with explicit aliases for forms such as `twelve`. Unit labels express the same unit, so never declare both `km` and `m` for the same value. Per-answer matching reasons are stored in session results and available in the editor; they are not added to player announcements.
+Save, import or export the bank from the dashboard. The tester calls jev with the draft question, threshold and model, including unsaved changes, and shows the score or the fallback reason. Saving a bank never changes a running game's frozen rules or previously awarded points. Older banks using `answer` and `grading_mode` are rejected. Rewrite them with `criteria`.
 
 ## Rehearse without sending anything
 
@@ -286,9 +265,8 @@ Accessibility pagination remains a diagnostic fallback prototype. Its UI cells c
 | `quiz_app/config.py` | Strict `.env` parsing, validation and private atomic saves |
 | `quiz_app/models.py`, `errors.py` | Typed schemas and classified errors |
 | `quiz_app/messages.py` | French player announcements, native WhatsApp styling and score presentation |
-| `quiz_app/grading.py` | Command extraction, correction modes and matching evidence |
+| `quiz_app/grading.py` | Command extraction, jev threshold decisions and the local alias fallback |
 | `quiz_app/normalization.py` | Shared Unicode, whitespace, case and punctuation normalization |
-| `quiz_app/numeric.py` | Exact decimal parsing and declared-unit validation |
 | `quiz_app/jev.py` | TypeSafe jev Noul client: request contract, bounded retries and parallel scoring |
 | `quiz_app/scoring.py` | Decimal half-up points and tied standings |
 | `quiz_app/live.py` | Read-only provisional scores, participant labels and confirmed totals |

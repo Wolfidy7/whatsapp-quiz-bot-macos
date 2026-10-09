@@ -1,6 +1,6 @@
 [
-  {"id":"capital", "question":"Quelle est la capitale de la France ?", "answer":"Paris", "aliases":["Ville de Paris"], "explanation":"Paris est la capitale de la France."},
-  {"id":"language", "question":"Quel langage utilise le symbole C suivi de deux signes plus ?", "answer":"C++", "aliases":[], "explanation":"Les deux signes plus font partie du nom."},
-  {"id":"wizard", "question":"Quel personnage de Poudlard porte une cicatrice en forme d'éclair ?", "answer":"Harry Potter", "grading_mode":"person_name", "aliases":[], "explanation":"Le nom complet est attendu ; l'ordre des mots est libre."},
-  {"id":"distance", "question":"Quelle distance, en kilomètres, représente un parcours de 3 étapes de 4 kilomètres ?", "answer":"12 km", "grading_mode":"number", "units":["km","kilomètres"], "require_unit":true, "aliases":[], "explanation":"Trois fois quatre kilomètres font douze kilomètres."}
+  {"id":"capital", "question":"Quelle est la capitale de la France ?", "criteria":{"true":"Paris", "false":"Toute autre ville ou réponse"}, "aliases":["Ville de Paris"], "explanation":"Paris est la capitale de la France."},
+  {"id":"language", "question":"Quel langage utilise le symbole C suivi de deux signes plus ?", "criteria":{"true":"C++", "false":"Tout autre langage, dont C et C#"}, "aliases":[], "explanation":"Les deux signes plus font partie du nom."},
+  {"id":"wizard", "question":"Quel personnage de Poudlard porte une cicatrice en forme d'éclair ?", "criteria":{"true":"Harry Potter", "false":"Tout autre personnage, ou seulement un prénom ou un nom"}, "aliases":["Potter Harry"], "explanation":"Le nom complet est attendu ; l'ordre des mots est libre."},
+  {"id":"fact1_senegal_president", "question":"Qui est le président actuel du Sénégal ?", "criteria":{"true":"Diomaye Faye", "false":"Toute autre réponse"}, "aliases":["Bassirou Diomaye Faye"], "explanation":"Bassirou Diomaye Faye est président depuis avril 2024."}
 ]

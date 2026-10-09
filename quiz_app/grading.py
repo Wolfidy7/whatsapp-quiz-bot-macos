@@ -1,55 +1,65 @@
-"""Deterministic, explicit correction modes; no fuzzy matching or external service."""
+"""jev threshold decisions, with exact alias matching as the explicit offline fallback."""
 
-from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
+from quiz_app.jev import JevClient, NoulQuestion
 from quiz_app.models import Question
 from quiz_app.normalization import normalize as normalize
-from quiz_app.numeric import numeric_value
+
+Scorer = Callable[[Question, dict[str, str]], dict[str, float | None]]
+FALLBACK = "Repli local (jev indisponible) : "
 
 
 @dataclass(frozen=True)
 class Verdict:
-    """Original reference and readable reason, shared by live scoring and the editor."""
+    """Acceptance evidence shared by live scoring and the editor: jev score or matched alias."""
 
     accepted: bool
     alias: str | None
     reason: str
+    score: float | None = None
+    source: Literal["jev", "fallback"] = "fallback"
 
 
-def alias_reason(question: Question, value: str, alias: str, ignore_accents: bool) -> str:
-    """Explain a complete match against one reference, or return empty text for a mismatch."""
-    expected = normalize(alias, ignore_accents)
-    if question.grading_mode == "number":
-        candidate = numeric_value(value, question.units, question.require_unit, ignore_accents)
-        reference = numeric_value(expected, question.units, question.require_unit, ignore_accents)
-        return (
-            "Valeur numérique équivalente et unité conforme."
-            if candidate is not None and candidate == reference
-            else ""
-        )
-    if value == expected:
-        return "Correspondance exacte après normalisation."
-    if question.grading_mode == "person_name" and Counter(value.split()) == Counter(expected.split()):
-        return "Nom complet reconnu : ordre des mots différent."
-    return ""
+def offline(question: Question, answers: dict[str, str]) -> dict[str, float | None]:
+    """Score nothing, so every answer uses the local fallback; never touches the network."""
+    return dict.fromkeys(answers)
 
 
-def evaluate_answer(question: Question, answer: str, ignore_accents: bool = True) -> Verdict:
-    """Compare a full answer with declared references and return acceptance evidence; no effects."""
+def noul_question(question: Question) -> NoulQuestion:
+    """Map a bank question to jev: the question is the instructions; aliases are never sent."""
+    return NoulQuestion(question.id, question.question, question.criteria.true, question.criteria.false)
+
+
+def jev_scorer(api_key: str, model: str) -> Scorer:
+    """Score round answers with jev in parallel; without a key, every answer falls back locally."""
+    if not api_key:
+        return offline
+    client = JevClient(api_key, model)
+    return lambda question, answers: client.score_many(noul_question(question), answers)
+
+
+def fallback_verdict(question: Question, answer: str, ignore_accents: bool = True) -> Verdict:
+    """Accept only a complete normalized match with the true criterion or a declared alias."""
     value = normalize(answer, ignore_accents)
     if value:
-        for alias in [question.answer, *question.aliases]:
-            reason = alias_reason(question, value, alias, ignore_accents)
-            if reason:
-                return Verdict(True, alias, reason)
-    return Verdict(False, None, "Aucune réponse officielle ou alias ne correspond selon le mode choisi.")
+        for alias in [question.criteria.true, *question.aliases]:
+            if value == normalize(alias, ignore_accents):
+                return Verdict(True, alias, FALLBACK + "correspondance exacte après normalisation.")
+    return Verdict(False, None, FALLBACK + "aucune référence ni alias ne correspond.")
 
 
-def match_answer(question: Question, answer: str, ignore_accents: bool = True) -> tuple[bool, str | None]:
-    """Return acceptance and the original matching reference, preserving the tuple API."""
-    verdict = evaluate_answer(question, answer, ignore_accents)
-    return verdict.accepted, verdict.alias
+def evaluate_answer(
+    question: Question, answer: str, score: float | None, threshold: float, ignore_accents: bool = True
+) -> Verdict:
+    """Accept when the jev probability reaches the threshold; fall back locally without a score."""
+    if score is None:
+        return fallback_verdict(question, answer, ignore_accents)
+    accepted = score >= threshold
+    comparison = "≥" if accepted else "<"
+    return Verdict(accepted, None, f"Score jev {score:.3f} {comparison} seuil {threshold:.3f}.", score, "jev")
 
 
 def extract_answer(body: str, prefix: str) -> str | None:

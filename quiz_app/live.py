@@ -1,17 +1,21 @@
 """Read-only provisional dashboard projections, kept separate from confirmed game results."""
 
 from quiz_app.engine import correct_round, display_name
+from quiz_app.grading import offline
 from quiz_app.models import Result, Session
 from quiz_app.scoring import standings
 
 
 def current_results(session: Session) -> list[Result]:
-    """Project first answers during an open round; leave the durable round results untouched."""
+    """Project first answers during an open round with local matching only; jev grades at STOP.
+
+    Calling jev here would run on every dashboard refresh and could delay the STOP publication.
+    """
     if not session.rounds:
         return []
     round_ = session.rounds[-1]
     if session.phase == "answering":
-        return correct_round(round_, session.players, session.settings)
+        return correct_round(round_, session.players, session.settings, offline)
     return round_.results
 
 

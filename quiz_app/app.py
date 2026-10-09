@@ -15,11 +15,11 @@ from pydantic import Field
 
 from quiz_app.ax_reader import AXReader
 from quiz_app.ax_sender import AXSender
-from quiz_app.config import load_settings, save_settings
+from quiz_app.config import load_api_key, load_settings, save_settings
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.engine import Engine, new_session
 from quiz_app.errors import QuizError
-from quiz_app.grading import evaluate_answer
+from quiz_app.grading import Scorer, evaluate_answer, jev_scorer
 from quiz_app.live import live_view
 from quiz_app.models import Question, Settings, StrictModel
 from quiz_app.repository import load_bank, load_session, save_bank
@@ -46,11 +46,13 @@ class Injection(StrictModel):
 
 
 class AnswerTest(StrictModel):
-    """Question draft and candidate answer for the deterministic tester."""
+    """Question draft and candidate answer for the jev tester; unset options use saved defaults."""
 
     question: Question
     answer: str = Field(max_length=4000)
     ignore_accents: bool | None = None
+    jev_threshold: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    jev_model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{1,80}$")
 
 
 class Controller:
@@ -99,12 +101,17 @@ class Controller:
             self.root / f"data/sessions/{session.id}.json",
             time.time,
             self.stop_requested.is_set,
+            self.scorer(settings),
         )
         try:
             self.engine.begin()
         except QuizError as exc:
             self.engine.handle_incident(exc)
         return self.state()
+
+    def scorer(self, settings: Settings) -> Scorer:
+        """Build the snapshot's jev scorer from the private key; no key means local fallback only."""
+        return jev_scorer(load_api_key(self.root / ".env"), settings.jev_model)
 
     def transport(
         self, mode: str, group: str, max_pages: int, database: str, rehearsal: bool = False
@@ -210,6 +217,7 @@ class Controller:
                 self.root / f"data/sessions/{session_id}.json",
                 time.time,
                 self.stop_requested.is_set,
+                self.scorer(session.settings),
             )
             if session.phase != "paused":
                 self.engine.pause(
@@ -287,14 +295,30 @@ def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
 
     @app.post("/api/test-answer")
     def test_answer(value: AnswerTest) -> dict[str, object]:
-        """Test the form's accent setting, falling back to saved defaults for older clients."""
-        ignore_accents = (
-            load_settings(root / ".env").ignore_accents
-            if value.ignore_accents is None
-            else value.ignore_accents
+        """Score one draft answer with jev using the form's options, falling back to saved defaults."""
+        saved = load_settings(root / ".env")
+        settings = saved.model_copy(
+            update={
+                "ignore_accents": saved.ignore_accents
+                if value.ignore_accents is None
+                else value.ignore_accents,
+                "jev_threshold": value.jev_threshold
+                if value.jev_threshold is not None
+                else saved.jev_threshold,
+                "jev_model": value.jev_model or saved.jev_model,
+            }
         )
-        verdict = evaluate_answer(value.question, value.answer, ignore_accents)
-        return {"accepted": verdict.accepted, "alias": verdict.alias, "reason": verdict.reason}
+        score = controller.scorer(settings)(value.question, {"answer": value.answer})["answer"]
+        verdict = evaluate_answer(
+            value.question, value.answer, score, settings.jev_threshold, settings.ignore_accents
+        )
+        return {
+            "accepted": verdict.accepted,
+            "alias": verdict.alias,
+            "reason": verdict.reason,
+            "score": verdict.score,
+            "source": verdict.source,
+        }
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, bool]:

@@ -5,7 +5,6 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from quiz_app.normalization import normalize
-from quiz_app.numeric import numeric_value
 
 
 class StrictModel(BaseModel):
@@ -14,43 +13,38 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class Criteria(StrictModel):
+    """jev decision criteria: what a correct (true) and an incorrect (false) answer mean."""
+
+    true: str = Field(min_length=1, max_length=500)
+    false: str = Field(min_length=1, max_length=500)
+
+    @field_validator("true", "false")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        """Strip surrounding spaces and reject empty criteria."""
+        if not value.strip():
+            raise ValueError("Criteria cannot be blank")
+        return value.strip()
+
+
 class Question(StrictModel):
-    """A deterministic correction rule; old banks default to normalized exact equality."""
+    """A jev-graded question; aliases are only the offline fallback and are never sent to jev."""
 
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     question: str = Field(min_length=1, max_length=2000)
-    answer: str = Field(min_length=1, max_length=500)
+    criteria: Criteria
     aliases: list[str] = Field(default_factory=list, max_length=100)
     explanation: str = Field(default="", max_length=2000)
-    grading_mode: Literal["exact", "person_name", "number"] = "exact"
-    units: list[str] = Field(default_factory=list, max_length=30)
-    require_unit: bool = False
 
     @model_validator(mode="after")
-    def valid_correction(self) -> Self:
-        """Reject unusable aliases, misplaced unit options and invalid numeric references."""
-        if any(not normalize(alias, False) for alias in [self.answer, *self.aliases]):
-            raise ValueError("Answers and aliases must contain meaningful text")
-        if self.grading_mode != "number":
-            if self.units or self.require_unit:
-                raise ValueError("Unit options require grading_mode=number")
-            return self
-        self.valid_numeric_rule()
+    def valid_fallback(self) -> Self:
+        """Require meaningful fallback references: the true criterion and every alias."""
+        if any(not normalize(alias, False) for alias in [self.criteria.true, *self.aliases]):
+            raise ValueError("Criteria and aliases must contain meaningful text")
         return self
 
-    def valid_numeric_rule(self) -> None:
-        """Validate unit labels and all numeric references; raise ValueError on an invalid rule."""
-        if any(not normalize(unit, False) or len(unit) > 40 for unit in self.units):
-            raise ValueError("Unit labels must contain 1–40 meaningful characters")
-        if self.require_unit and not self.units:
-            raise ValueError("A required unit needs at least one allowed label")
-        if any(
-            numeric_value(alias, self.units, self.require_unit, False) is None
-            for alias in [self.answer, *self.aliases]
-        ):
-            raise ValueError("Numeric answers and aliases must be decimal values with an allowed unit")
-
-    @field_validator("question", "answer")
+    @field_validator("question")
     @classmethod
     def nonblank(cls, value: str) -> str:
         """Strip surrounding spaces and reject empty content."""
@@ -142,6 +136,8 @@ class Result(StrictModel):
     accepted: bool = False
     alias: str | None = None
     reason: str = ""
+    score: float | None = Field(default=None, ge=0, le=1)
+    source: Literal["jev", "fallback", ""] = ""
     rank: int | None = None
     points: int = 0
 

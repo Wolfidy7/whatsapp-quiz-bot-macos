@@ -13,7 +13,7 @@ from quiz_app.engine import correct_round
 from quiz_app.errors import QuizError
 from quiz_app.history import reconcile
 from quiz_app.messages import STOP
-from quiz_app.models import Message, Question, Round, Settings
+from quiz_app.models import Criteria, Message, Question, Round, Settings
 from quiz_app.storage import locked, write_json
 from quiz_app.transport import Transport
 from scripts.validate_transport import publish_reserved
@@ -70,7 +70,9 @@ def verify_round(messages: list[Message], player: Message, settings: Settings) -
     if any(message.author_id != player.author_id or message.edited for message in incoming):
         raise QuizError("VALIDATION_FAILED", "Reply authors differ from the enrolled native identity")
     question = Question(
-        id="native-validation", question="Quelle est la capitale de la France ?", answer="Paris"
+        id="native-validation",
+        question="Quelle est la capitale de la France ?",
+        criteria=Criteria(true="Paris", false="Toute autre réponse"),
     )
     round_ = Round(question=question, start_marker="verified", stop_marker="verified-stop", observed=messages)
     result = correct_round(round_, [player.author_id], settings)[0]
