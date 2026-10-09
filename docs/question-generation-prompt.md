@@ -1,6 +1,6 @@
 # Prompt de génération de questions
 
-Ce prompt sert à faire générer des questions par une IA, au format attendu par la banque de questions jev. Remplacez `[NOMBRE]`, `[THÈME]` et la difficulté, puis collez le JSON obtenu dans **Gérer la banque de questions** et cliquez sur **Enregistrer les questions**.
+Dans Claude Code, le plus simple est d'utiliser le skill `/generate-questions <thèmes> <nombre> <difficulté>`. Il applique ce prompt, contrôle le lot avec `scripts/check_questions.py`, relit les faits et ajoute les questions à la banque. Ce prompt sert aussi à faire générer des questions par une autre IA, au format attendu par la banque de questions jev. Remplacez `[NOMBRE]`, `[THÈME]` et la difficulté, puis collez le JSON obtenu dans **Gérer la banque de questions** et cliquez sur **Enregistrer les questions**.
 
 - **Coller remplace toute la banque.** La zone JSON contient la banque entière. Pour ajouter des questions, insérez les nouveaux objets dans le tableau existant, juste avant le `]` final, en ajoutant une virgule.
 - **Une seule question invalide fait rejeter tout le lot**, par exemple un identifiant accentué. Corrigez-la avant d'enregistrer.
