@@ -43,6 +43,8 @@ Toutes les mesures ont été faites avec `jev-latest`, au seuil de 0,8. Chaque r
 
 **Itération 5 : 100 questions de santé, de géographie et de séries TV, notées avec la consigne.** Le lot est importé tel quel et obtient **98,6 % de bonnes évaluations hors fautes de frappe** (96,8 % en les comptant), avec 90 questions sur 100 sans erreur. Les 12 pièges encore acceptés, sur 800, reprenaient presque tous un nom déjà présent dans la question : « Ouagadougou » pour « Quel pays a pour capitale Ouagadougou ? », « Hanoï », « Mark Frost », « Doctor Who ». Une phrase ajoutée à la consigne les fait tous refuser : **99,3 % hors fautes, 0 piège accepté, 96 questions sur 100 sans erreur.**
 
+**Itération 6 : 100 questions de santé, de psychologie et sur les pirates, avec le prompt inchangé.** Le lot obtient 97,3 % hors fautes de frappe, mais 10 pièges sont acceptés, entre 0,80 et 0,84. Ce sont tous des noms recopiés depuis la question : « Doliprane », « Nurofen », « Plasmodium », « thyroxine », « Calico Jack ». Deux règles locales sont ajoutées, appliquées avant jev : une réponse recopiée de la question est refusée, et une réponse identique à un alias est acceptée (voir le README). Résultat : **98,9 % hors fautes, 0 piège accepté, 93 questions sur 100 sans erreur.** Conséquence pour le prompt : les alias doivent être strictement corrects, puisqu'ils sont désormais acceptés d'office.
+
 Le critère vrai est aussi annoncé aux joueurs comme « la bonne réponse ». Il doit donc rester une réponse courte, et les nuances de notation vont dans le critère faux.
 
 ## Prompt
@@ -117,7 +119,8 @@ RÈGLES PAR CHAMP
    - Expliquer pourquoi un piège est faux, par exemple « le Soleil est une étoile, pas une planète ». Cela n'aide pas : cite simplement le piège.
 
 5. "aliases" (au maximum 100 éléments, peut être vide)
-   - C'est un filet de secours utilisé UNIQUEMENT si jev est indisponible. On compare alors la réponse mot pour mot, sans tenir compte des majuscules, des accents ni de la ponctuation finale.
+   - Une réponse identique à un alias, sans tenir compte des majuscules, des accents ni de la ponctuation finale, est ACCEPTÉE D'OFFICE, sans passer par jev. Les alias servent aussi de filet de secours si jev est indisponible.
+   - Un alias ne doit donc JAMAIS être une forme insuffisante ou ambiguë : pas de prénom seul (« George »), pas de description vague (« le joueur libérien »), pas de catégorie (« Afrique »).
    - Mets 2 à 6 formes exactes et courantes de la bonne réponse : nom seul, orthographe alternative, traduction courante, nombre en lettres. Par exemple ["Weah", "Georges Weah"] ou ["dix", "10 épreuves"].
    - Pas besoin d'être exhaustif, et n'y mets jamais de forme qui serait fausse. Chaque alias doit contenir au moins une lettre ou un chiffre.
 

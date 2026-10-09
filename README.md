@@ -98,7 +98,13 @@ The guidance is never shown to players. It states the expected answer, tolerates
 
 jev returns a probability between 0 and 1. The answer is accepted when it is **greater than or equal to `JEV_THRESHOLD`** (0.8 by default), so you no longer list every acceptable spelling. `criteria.true` is also the answer revealed to players after STOP. Keep it a readable answer rather than a grading instruction, and put nuances in `criteria.false`.
 
-**Local fallback.** `aliases` are never sent to jev. They are used only when jev cannot score an answer: missing `JEV_API_KEY`, network error or timeout, authentication or validation error, or rate limit or overload after three attempts. The fallback then accepts only a complete match with `criteria.true` or an alias, after normalization. Normalization covers Unicode, case, whitespace, curly apostrophes, terminal punctuation and, optionally, accents. The fallback applies per answer, so a single round can mix jev and fallback grading. Each result stores its `source` (`jev` or `fallback`), the jev `score` and a readable reason, and the dashboard displays them. Player announcements are unchanged.
+**Local rules, applied before jev.** Two exact rules decide some answers without calling jev:
+- **Exact reference:** an answer that matches `criteria.true` or an alias after normalization is accepted. Aliases must therefore contain only correct forms of the answer, never a first name alone or a vague description.
+- **Echo of the question:** an answer that merely copies a passage of the question is rejected, for example « Doliprane » for « Quel antalgique est vendu sous le nom Doliprane ? ».
+
+jev scored such echoes between 0.80 and 0.84 even with the guidance. On a 100-question health, psychology and pirates batch, the two rules raised correct evaluations from 97.3 % to 98.9 % (excluding typos), with no accepted trap. Each result records `source: "local"` and the dashboard shows « règle locale ».
+
+**Local fallback.** `aliases` are never sent to jev. When jev cannot score an answer, the fallback is used: missing `JEV_API_KEY`, network error or timeout, authentication or validation error, or rate limit or overload after three attempts. The fallback then accepts only a complete match with `criteria.true` or an alias, after normalization. Normalization covers Unicode, case, whitespace, curly apostrophes, terminal punctuation and, optionally, accents. The fallback applies per answer, so a single round can mix jev and fallback grading. Each result stores its `source` (`jev` or `fallback`), the jev `score` and a readable reason, and the dashboard displays them. Player announcements are unchanged.
 
 Open-round points on the dashboard are **provisional and use the local fallback only**. jev is called once per answer when the round closes, so dashboard refreshes never call it and it never delays the STOP message.
 
