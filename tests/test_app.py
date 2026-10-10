@@ -219,3 +219,13 @@ def test_simulation_recovery_keeps_deleted_first_reply_and_sequence(root):
     controller.tick()
     assert controller.engine.session.rounds[0].results[0].answer=='Paris'
     assert controller.engine.session.rounds[0].results[0].points==100
+
+def test_remote_host_only_through_https_proxy(root):
+    remote='mac.tail1234.ts.net'
+    env=root/'.env';env.write_text(env.read_text().replace('REMOTE_HOSTS=""',f'REMOTE_HOSTS="{remote.upper()}., "'))
+    with TestClient(create_app(root,background=False)) as client:
+        assert client.get('/api/session',headers={'host':remote}).status_code==200
+        assert client.post('/api/cancel',headers={'host':remote,'origin':f'https://{remote}'}).status_code!=403
+        assert client.post('/api/cancel',headers={'host':remote,'origin':'https://attacker.test'}).status_code==403
+        assert client.get('/api/session',headers={'host':'other.tail1234.ts.net'}).status_code==403
+        assert client.post('/api/cancel',headers={'origin':f'https://{remote}'}).status_code==403

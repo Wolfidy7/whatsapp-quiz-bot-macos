@@ -15,7 +15,7 @@ from pydantic import Field
 
 from quiz_app.ax_reader import AXReader
 from quiz_app.ax_sender import AXSender
-from quiz_app.config import load_api_key, load_settings, save_settings
+from quiz_app.config import load_api_key, load_remote_hosts, load_settings, save_settings
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.engine import Engine, new_session
 from quiz_app.errors import QuizError
@@ -257,16 +257,30 @@ def make_lifespan(
     return lifespan
 
 
-async def local_boundary(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-    """Reject foreign hosts and origins to prevent browser-triggered local mutations."""
-    if request.url.hostname not in {"127.0.0.1", "localhost", "testserver"}:
-        return JSONResponse({"error": "HOST_FORBIDDEN"}, status_code=403)
-    origin = request.headers.get("origin")
-    if origin and origin != f"{request.url.scheme}://{request.headers.get('host')}":
-        return JSONResponse({"error": "ORIGIN_FORBIDDEN"}, status_code=403)
-    if request.method in ("POST", "PUT") and len(await request.body()) > 1_000_000:
-        return JSONResponse({"error": "PAYLOAD_TOO_LARGE"}, status_code=413)
-    return await call_next(request)
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "testserver"})
+Boundary = Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]
+
+
+def local_boundary(remote_hosts: frozenset[str] = frozenset()) -> Boundary:
+    """Reject foreign hosts and origins; remote hosts are only reachable through the HTTPS Tailscale proxy."""
+
+    async def boundary(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        hostname = request.url.hostname
+        if hostname not in LOCAL_HOSTS | remote_hosts:
+            return JSONResponse({"error": "HOST_FORBIDDEN"}, status_code=403)
+        host = request.headers.get("host")
+        allowed = {f"{request.url.scheme}://{host}"}
+        if hostname in remote_hosts:
+            # tailscale serve terminates HTTPS and forwards plain HTTP to the loopback port.
+            allowed.add(f"https://{host}")
+        origin = request.headers.get("origin")
+        if origin and origin not in allowed:
+            return JSONResponse({"error": "ORIGIN_FORBIDDEN"}, status_code=403)
+        if request.method in ("POST", "PUT") and len(await request.body()) > 1_000_000:
+            return JSONResponse({"error": "PAYLOAD_TOO_LARGE"}, status_code=413)
+        return await call_next(request)
+
+    return boundary
 
 
 def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
@@ -275,7 +289,7 @@ def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
 
     app = FastAPI(title="WhatsApp Quiz · local", lifespan=make_lifespan(controller, background))
     app.state.controller = controller
-    app.middleware("http")(local_boundary)
+    app.middleware("http")(local_boundary(load_remote_hosts(root / ".env")))
 
     @app.exception_handler(QuizError)
     async def incident(request: Request, error: QuizError) -> JSONResponse:

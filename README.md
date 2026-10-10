@@ -30,7 +30,18 @@ cp questions.example.json data/questions.json
 python -m quiz_app
 ```
 
-Open **http://127.0.0.1:8765**. The server binds only to loopback and uses one worker. A process lock prevents multiple services sharing the same private data directory. Do not expose it through a proxy or bind it to a public interface.
+Open **http://127.0.0.1:8765**. The server binds only to loopback and uses one worker. A process lock prevents multiple services sharing the same private data directory. Do not bind it to a public interface or expose it through a public proxy; for remote access, use the private Tailscale setup below.
+
+### Remote access with Tailscale
+
+To launch games from your phone or another computer, publish the dashboard to your private Tailscale network only. Nothing is exposed on the public internet: only devices signed in to your tailnet can reach it.
+
+1. Install the Tailscale app on the Mac (`brew install --cask tailscale-app`, or the [download page](https://tailscale.com/download/mac)), sign in and approve the system extension. Install Tailscale and sign in with the same account on each device you will use.
+2. In the [admin console](https://login.tailscale.com/admin/dns), enable MagicDNS and HTTPS certificates.
+3. Proxy the loopback port over HTTPS: `tailscale serve --bg 8765`. It prints the address, for example `https://mac.tail1234.ts.net`. The server itself stays bound to `127.0.0.1`.
+4. Add that hostname to `.env`: `REMOTE_HOSTS="mac.tail1234.ts.net"`, then restart the server. Other hostnames are still rejected.
+
+Native games still drive the WhatsApp window: the Mac must stay on, awake (`caffeinate -dis`) and unlocked, with WhatsApp available. To stop remote access, run `tailscale serve reset`. Do not use `tailscale funnel`, which publishes the dashboard on the public internet.
 
 The dashboard loads its defaults from `.env`. Edit them in **Préparer la partie**, select questions, choose a mode and click **Démarrer**. There is no need to supply terminal parameters for each game. **Enregistrer dans le .env** saves the defaults atomically to the private file; **Démarrer** uses the current form values even if you have not saved them. Every new game snapshots its settings and selected questions; changing the bank or defaults never changes a running game. Advanced options include commands, polling, native database path and server port. A port change takes effect only after restarting the server.
 
@@ -64,6 +75,7 @@ Use **Arrêter** in the fixed header or beside **Démarrer** to cancel at any st
 | `WHATSAPP_DATABASE` | Default WhatsApp group-container path | Existing local database; opened read-only |
 | `MESSAGE_CHUNK_SIZE` | 3000 | Maximum visible outgoing message size |
 | `PORT` | 8765 | Local HTTP port |
+| `REMOTE_HOSTS` | `""` | Comma-separated Tailscale hostnames allowed in addition to loopback, for example `mac.tail1234.ts.net`. Read only from `.env`; never shown or changed by the dashboard. Empty means local access only |
 | `JEV_THRESHOLD` | 0.8 | Minimum jev probability (0–1) to accept an answer |
 | `JEV_MODEL` | `jev-latest` | TypeSafe jev model sent with each evaluation |
 | `JEV_API_KEY` | `""` | Private TypeSafe key, read only from `.env`; never shown in the dashboard, stored in sessions or overwritten by settings saves. Empty means local alias fallback only |

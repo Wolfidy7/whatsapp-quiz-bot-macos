@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
@@ -12,13 +13,17 @@ from quiz_app.models import Settings
 from quiz_app.storage import locked
 
 API_KEY = "jev_api_key"
+# Hostnames of the private Tailscale proxy, read only from .env so the dashboard cannot widen them.
+REMOTE_HOSTS = "remote_hosts"
+PRIVATE_KEYS = (API_KEY, REMOTE_HOSTS)
 
 
 def load_settings(path: Path) -> Settings:
     """Parse all settings; raise CONFIG_INVALID on missing or malformed input."""
     try:
         values = parse_env(path.read_text(encoding="utf-8"))
-        values.pop(API_KEY, None)
+        for key in PRIVATE_KEYS:
+            values.pop(key, None)
         settings = Settings.model_validate(values)
         return settings
     except (OSError, ValueError, ValidationError) as exc:
@@ -35,9 +40,25 @@ def load_api_key(path: Path) -> str:
         raise QuizError("CONFIG_INVALID", str(exc)) from exc
 
 
+def load_remote_hosts(path: Path) -> frozenset[str]:
+    """Read the comma-separated REMOTE_HOSTS allowlist; empty when the file or key is absent."""
+    try:
+        raw = str(parse_env(path.read_text(encoding="utf-8")).get(REMOTE_HOSTS, ""))
+    except FileNotFoundError:
+        return frozenset()
+    except (OSError, ValueError) as exc:
+        raise QuizError("CONFIG_INVALID", str(exc)) from exc
+    # Accept URLs copied from `tailscale serve` output by keeping only their hostname.
+    items = (item.strip() for item in raw.split(","))
+    hosts = (urlsplit(item if "//" in item else f"//{item}").hostname for item in items if item)
+    return frozenset(host.rstrip(".") for host in hosts if host)
+
+
 def save_settings(path: Path, settings: Settings) -> None:
-    """Atomically save validated defaults to the single private .env, preserving the jev key."""
-    values = {**settings.model_dump(), API_KEY: load_api_key(path)}
+    """Atomically save validated defaults to the single private .env, preserving private keys."""
+    values: dict[str, object] = {**settings.model_dump(), API_KEY: load_api_key(path)}
+    if hosts := load_remote_hosts(path):
+        values[REMOTE_HOSTS] = ",".join(sorted(hosts))
     text = "".join(
         f"{key.upper()}={json.dumps(value, ensure_ascii=False)}\n" for key, value in values.items()
     )

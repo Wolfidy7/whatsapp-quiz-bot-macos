@@ -126,3 +126,18 @@ def test_jev_settings_bounds_and_unreadable_key(tmp_path):
     path=tmp_path/'broken';path.write_text('X')
     with pytest.raises(QuizError):load_api_key(path)
     with pytest.raises(QuizError):load_api_key(tmp_path)
+
+
+def test_remote_hosts_stay_outside_settings_and_survive_saves(tmp_path,settings):
+    from quiz_app.config import save_settings,load_remote_hosts
+    path=tmp_path/'.env'
+    assert load_remote_hosts(path)==frozenset()
+    save_settings(path,settings)
+    assert 'REMOTE_HOSTS' not in path.read_text() and load_remote_hosts(path)==frozenset()
+    path.write_text(path.read_text()+'REMOTE_HOSTS="https://Mac.tail1234.ts.net./, ,b.ts.net"\n')
+    loaded=load_settings(path)
+    assert 'remote_hosts' not in loaded.model_dump()
+    save_settings(path,loaded)
+    assert load_remote_hosts(path)=={'mac.tail1234.ts.net','b.ts.net'}
+    broken=tmp_path/'broken';broken.write_text('X')
+    with pytest.raises(QuizError):load_remote_hosts(broken)
