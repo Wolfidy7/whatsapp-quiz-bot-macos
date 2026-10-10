@@ -127,6 +127,17 @@ To generate questions with an AI, use the Claude Code skill `/generate-questions
 4. It re-checks the facts.
 5. It replaces the whole bank with the batch after a timestamped backup.
 
+**From the dashboard.** Open **Générer des questions avec Claude**, enter the themes, the number of questions and the difficulty, then click **Générer**. The server runs the same skill on the Mac through the [Claude Agent SDK](https://pypi.org/project/claude-agent-sdk/), using the Claude Code login of the Mac, and charges that account like a terminal run. Generation runs in the background and takes a few minutes; the page shows its progress, and it continues if you close the page. Only one generation runs at a time, and **Annuler la génération** stops it. When it finishes, the dashboard lists the questions with their answers, the checker's errors and warnings, and Claude's report. The bank is untouched until you click **Remplacer la banque par ce lot** and confirm. The app then backs up the bank in `data/questions.before-merge-<date>.json` and saves the batch through its usual validation. Replacing is refused while a game is running, or when the batch has errors.
+
+The agent is restricted to the skill's workflow. A `PreToolUse` hook allows or refuses every tool call, and only project settings are loaded, so your global Claude Code permissions do not apply. The agent may:
+- run the `generate-questions` skill;
+- read `docs/`, the skill, `scripts/` and `quiz_app/`, but not `.env`, the bank or sessions;
+- write only `data/generated-questions.json`;
+- run only `PYTHONPATH=. .venv/bin/python scripts/check_questions.py data/generated-questions.json`, without `--merge` or `--replace`;
+- search and fetch web pages to check facts.
+
+Refused calls appear in the progress log. Claude Code must be installed and signed in on the Mac (`claude` in a terminal), with the `claude-agent-sdk` dependency from `requirements.txt`.
+
 You can also run the checker on any batch yourself: `python scripts/check_questions.py <batch.json> [--merge | --replace]`. `--merge` appends the batch to the bank and also checks id conflicts with it; `--replace` overwrites the bank. The prompt can still be pasted into any other assistant.
 
 Save, import or export the bank from the dashboard. The tester calls jev with the draft question, threshold and model, including unsaved changes, and shows the score or the fallback reason. Saving a bank never changes a running game's frozen rules or previously awarded points. Older banks using `answer` and `grading_mode` are rejected. To rewrite one, open **Gérer la banque de questions** and select each question. A legacy `answer` prefills **Critère vrai**. Fill in **Critère faux** and the optional fallback aliases, click **Appliquer au brouillon JSON**, which also drops the retired fields, then **Enregistrer les questions**. The threshold is set under **Seuil de confiance jev**, and the model under the advanced settings. The game history shows, for each answer, its jev score or `repli local`.
@@ -309,6 +320,8 @@ Accessibility pagination remains a diagnostic fallback prototype. Its UI cells c
 | `quiz_app/engine.py` | Game phases, reservations, reports and recovery |
 | `quiz_app/storage.py`, `repository.py` | Locks, atomic writes, backups and schema validation |
 | `quiz_app/app.py`, `__main__.py` | Local HTTP endpoints and service launcher |
+| `quiz_app/generation.py` | Background generate-questions runs through the Claude Agent SDK, tool guard and batch review |
+| `quiz_app/batches.py` | Authoring checks and backed-up saves for generated batches, shared by the checker and the dashboard |
 | `quiz_app/static/` | French responsive dashboard, typed settings form, safe DOM rendering and view helpers |
 | `scripts/read_messages.py` | Fast read-only message-count diagnostic and optional private export |
 | `scripts/probe_whatsapp.py` | Legacy read-only accessibility prototype |

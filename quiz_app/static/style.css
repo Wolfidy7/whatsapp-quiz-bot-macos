@@ -316,3 +316,5 @@ header { position: sticky; top: 0; z-index: 10; background: #f8faf4f2; backdrop-
 .columns { align-items: start; }
 input, button, summary, .card { scroll-margin-top: 150px; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+.generated-list { display: grid; gap: 6px; max-height: 300px; overflow: auto; padding-left: 24px; }
+#gen-events { max-height: 220px; overflow: auto; }

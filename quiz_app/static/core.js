@@ -39,3 +39,13 @@ export function verdictText(result) {
   const reference = result.alias ? `référence « ${result.alias} » · ` : '';
   return `${result.accepted ? 'Acceptée' : 'Refusée'} · ${reference}${result.reason}`;
 }
+/** Describe a background question generation for its status line. */
+export function generationStatus(state, now = Date.now() / 1000) {
+  const seconds = state.started ? Math.max(0, Math.round((state.finished || now) - state.started)) : 0;
+  const elapsed = `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  const cost = typeof state.cost_usd === 'number' ? ` · coût ${state.cost_usd.toFixed(2)} $` : '';
+  const done = state.applied ? `Banque remplacée. Sauvegarde : ${state.applied}.`
+    : `Lot prêt en ${elapsed}${cost}. Vérifiez-le avant de remplacer la banque.`;
+  return ({idle: 'Aucune génération en cours.', running: `Génération en cours · ${elapsed}. Elle continue sur le Mac même si vous fermez cette page.`,
+    done, failed: `Échec de la génération : ${state.error}`, cancelled: 'Génération annulée.'})[state.status] || '';
+}

@@ -16,6 +16,14 @@
 <p id="mode-help" class="muted">Le mode WhatsApp envoie les annonces dans le groupe choisi. Les noms sont récupérés avec les inscriptions.</p>
 <h3>Questions de la partie</h3><p class="muted">Sélectionnez les questions à jouer, dans l’ordre de la banque.</p><div id="question-list" class="question-list"></div>
 <div class="actions game-actions"><button id="start" disabled>▶ Démarrer</button><button id="cancel" class="danger" disabled>■ Arrêter</button></div>
+<details id="generator"><summary>Générer des questions avec Claude</summary><p class="muted">Claude lance le skill generate-questions sur ce Mac : il rédige le lot, le contrôle et relit les faits. La banque n’est remplacée qu’après votre validation.</p>
+<form id="gen-form"><fieldset id="gen-form-fields" class="form-grid"><div class="form-field wide"><label for="gen-themes">Thèmes</label><input id="gen-themes" maxlength="300" required placeholder="cinéma, manga, géographie"></div>
+<div class="form-field"><label for="gen-count">Nombre de questions</label><input id="gen-count" type="number" min="1" max="200" step="1" value="20" required></div>
+<div class="form-field"><label for="gen-difficulty">Difficulté</label><select id="gen-difficulty"><option value="facile">Facile</option><option value="moyenne" selected>Moyenne</option><option value="difficile">Difficile</option></select></div></fieldset></form>
+<div class="actions"><button id="generate" class="secondary">✦ Générer</button><button id="generate-cancel" class="danger" disabled>Annuler la génération</button></div>
+<p id="gen-status" role="status" class="muted">Aucune génération en cours.</p><pre id="gen-events" hidden></pre>
+<div id="gen-review" hidden><h3>Lot généré</h3><ol id="gen-questions" class="generated-list"></ol><pre id="gen-checks" hidden></pre><pre id="gen-report"></pre>
+<div class="actions"><button id="gen-apply">Remplacer la banque par ce lot</button></div><p class="muted">L’ancienne banque est sauvegardée dans data/ avant le remplacement.</p></div></details>
 <details><summary>Gérer la banque de questions</summary><label for="bank">Questions et réponses (JSON)</label><textarea id="bank" spellcheck="false" rows="10"></textarea><div class="actions"><button id="save" class="secondary">Enregistrer les questions</button><button id="export" class="secondary">Exporter</button><label class="file-button">Importer<input type="file" id="import" accept="application/json,.json"></label></div>
 <h3>Régler et tester la correction</h3><label for="question">Question</label><select id="question"></select>
 <label for="criteria-true">Critère vrai · réponse attendue</label><input id="criteria-true" maxlength="500" placeholder="Diomaye Faye">

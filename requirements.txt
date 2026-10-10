@@ -5,3 +5,4 @@ pydantic==2.13.5
 pyobjc-framework-Cocoa==12.2.2; sys_platform == 'darwin'
 pyobjc-framework-ApplicationServices==12.2.2; sys_platform == 'darwin'
 pyobjc-framework-Quartz==12.2.2; sys_platform == 'darwin'
+claude-agent-sdk==0.2.165

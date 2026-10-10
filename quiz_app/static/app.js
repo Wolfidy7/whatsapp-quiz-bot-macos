@@ -1,8 +1,9 @@
 import {summary,remaining,parseBank,label,withCorrection,verdictText} from './core.js';
 import {renderSettings,readSettings} from './fields.js';
+import {renderGeneration,readGeneration} from './generation.js';
 /** Locate a named dashboard element. */
 const byId=id=>document.getElementById(id);
-let latest={},starting=false,polling=false,ready=false;
+let latest={},generation={},starting=false,polling=false,ready=false;
 const phases={registration:'INSCRIPTIONS',answering:'QUESTION EN COURS',interval:'ENTRE LES QUESTIONS',finished:'TERMINÉ',paused:'EN PAUSE',cancelled:'ARRÊTÉ'};
 /** Execute one same-origin JSON request and expose classified server failures. */
 async function api(path,method='GET',body) {
@@ -114,8 +115,16 @@ bind('inject',async()=>renderSession(await api('inject','POST',{author:byId('aut
 bind('recover',async()=>renderSession(await api(`recover/${encodeURIComponent(byId('archive').value)}`,'POST')));
 bind('export',async()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(await api('questions'),null,2)],{type:'application/json'}));const anchor=document.createElement('a');anchor.href=url;anchor.download='questions.json';anchor.click();URL.revokeObjectURL(url);});
 byId('import').addEventListener('change',()=>action(async()=>{const file=byId('import').files[0];if(file)byId('bank').value=JSON.stringify(parseBank(await file.text()),null,2);}));
+/** Fetch and render the background question generation. */
+async function refreshGeneration(){generation=await api('generation');renderGeneration(generation);}
+bind('generate',async()=>{if(!byId('gen-form').reportValidity())return;generation=await api('generation','POST',readGeneration());renderGeneration(generation);});
+bind('generate-cancel',async()=>{generation=await api('generation/cancel','POST');renderGeneration(generation);});
+bind('gen-apply',async()=>{
+ if(!confirm(`Remplacer toute la banque par ces ${generation.batch.questions.length} questions ? L’ancienne banque sera sauvegardée.`))return;
+ generation=await api('generation/apply','POST');renderGeneration(generation);renderBank(await api('questions'));
+});
 byId('mode').addEventListener('change',()=>{byId('mode-help').textContent=byId('mode').value==='simulation'?'Simulation locale : aucun message n’est envoyé dans WhatsApp.':'Les annonces seront envoyées dans le groupe WhatsApp configuré.';});
-await action(async()=>{renderSettings(await api('settings'));renderBank(await api('questions'));ready=true;renderSession(await api('session'));byId('notice').textContent=latest.error||'';});
+await action(async()=>{renderSettings(await api('settings'));renderBank(await api('questions'));ready=true;renderSession(await api('session'));byId('notice').textContent=latest.error||'';await refreshGeneration();});
 /** Poll snapshots without overlapping requests or erasing user edits. */
-async function refresh(){if(polling)return;polling=true;try{await action(async()=>renderSession(await api('session')));}finally{polling=false;}}
+async function refresh(){if(polling)return;polling=true;try{await action(async()=>{renderSession(await api('session'));if(generation.status==='running')await refreshGeneration();});}finally{polling=false;}}
 setInterval(refresh,1000);

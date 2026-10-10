@@ -2,11 +2,11 @@ import {it,expect,vi,afterEach,beforeEach} from 'vitest';
 import {readFileSync} from 'node:fs';
 const question={id:'capital',question:'Quelle est la capitale ?',criteria:{true:'Paris',false:'Toute autre ville'},aliases:[]};
 const defaults=Object.fromEntries(readFileSync('.env.example','utf8').split('\n').filter(line=>line&&!line.startsWith('#')).map(line=>{const [key,...parts]=line.split('=');return [key.toLowerCase(),JSON.parse(parts.join('='))];}));
-let bank,session,failure,accepted;
+let bank,session,failure,accepted,generation;
 const byId=id=>document.getElementById(id);
 async function settle(){for(let i=0;i<30;i++)await Promise.resolve();}
 async function click(id){byId(id).click();await settle();}
-beforeEach(()=>{vi.resetModules();vi.useFakeTimers();bank=[question];session={};failure=null;accepted=true;document.documentElement.innerHTML=readFileSync('quiz_app/static/index.html','utf8');});
+beforeEach(()=>{vi.resetModules();vi.useFakeTimers();bank=[question];session={};failure=null;accepted=true;generation={status:'idle',events:[],batch:null};document.documentElement.innerHTML=readFileSync('quiz_app/static/index.html','utf8');});
 afterEach(()=>{vi.clearAllTimers();vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks();});
 function response(value,ok=true){return {ok,json:async()=>value};}
 function mockApi() {
@@ -17,6 +17,10 @@ function mockApi() {
   if(path==='/api/start')session={id:'fake',mode:payload.mode,phase:'registration',players:[],rounds:[],deadline:Date.now()/1000+60,settings:payload.settings};
   if(path==='/api/inject'){session.players=[payload.author];session.player_names={[payload.author]:payload.author};}
   if(path==='/api/cancel')session.phase='cancelled';
+  if(path==='/api/generation'&&options.method==='POST')generation={status:'running',request:payload,started:Date.now()/1000-65,events:['Chargement du skill generate-questions'],batch:null};
+  if(path==='/api/generation/cancel')generation={...generation,status:'cancelled'};
+  if(path==='/api/generation/apply'){generation={...generation,applied:'questions.before-merge-1.json'};bank=[{...question,id:'new'}];}
+  if(path.startsWith('/api/generation'))return response(generation);
   if(path.startsWith('/api/recover'))session={id:'fake',phase:'paused',error:'RECOVERY_REQUIRED'};
   const value=path==='/api/questions'?bank:path==='/api/settings'?defaults:path==='/api/test-answer'?{accepted,alias:null,reason:accepted?'Score jev 0.920 ≥ seuil 0.800.':'Score jev 0.100 < seuil 0.800.',score:accepted?0.92:0.1,source:'jev'}:session;
   return response(value);
@@ -88,4 +92,27 @@ it('keeps Stop usable during an in-flight Start and avoids overlapping polling r
  await click('cancel');expect(byId('notice').textContent).toContain('Arrêt demandé');
  await vi.advanceTimersByTimeAsync(3000);expect(fetch.mock.calls.filter(([path])=>path==='/api/session')).toHaveLength(1);
  releasePoll();releaseStart();await settle();expect(byId('phase').textContent).toBe('ARRÊTÉ');expect(byId('notice').textContent).toBe('Partie arrêtée.');
+});
+it('generates a batch in the background, reviews it and replaces the bank only after confirmation',async()=>{
+ mockApi();vi.stubGlobal('confirm',vi.fn(()=>false));await import('../../quiz_app/static/app.js');
+ expect(byId('gen-status').textContent).toBe('Aucune génération en cours.');expect(byId('gen-review').hidden).toBe(true);
+ byId('gen-themes').value='';await click('generate');expect(fetch.mock.calls.some(([path,opts])=>path==='/api/generation'&&opts.method==='POST')).toBe(false);
+ byId('gen-themes').value='  anime, sport ';byId('gen-count').value='12';byId('gen-difficulty').value='difficile';await click('generate');
+ expect(JSON.parse(fetch.mock.calls.find(([path,opts])=>path==='/api/generation'&&opts.method==='POST')[1].body)).toEqual({themes:'anime, sport',count:12,difficulty:'difficile'});
+ expect(byId('generate').disabled).toBe(true);expect(byId('generate-cancel').disabled).toBe(false);expect(byId('gen-form-fields').disabled).toBe(true);
+ expect(byId('gen-status').textContent).toContain('Génération en cours · 1 min');expect(byId('gen-events').textContent).toBe('Chargement du skill generate-questions');
+ generation={...generation,status:'done',finished:generation.started+90,cost_usd:1.5,report:'Compte rendu',events:[...generation.events,'Contrôle du lot (check_questions.py)'],
+  batch:{questions:[{id:'new',question:'<b>Qui ?</b>',answer:'Weah'}],errors:[],warnings:['new : alias « Dante » = premier mot']}};
+ await vi.advanceTimersByTimeAsync(1000);
+ expect(byId('gen-status').textContent).toBe('Lot prêt en 1 min 30 s · coût 1.50 $. Vérifiez-le avant de remplacer la banque.');
+ expect(byId('gen-questions').textContent).toBe('<b>Qui ?</b> → Weah');expect(byId('gen-questions').querySelector('b')).toBeNull();
+ expect(byId('gen-checks').textContent).toBe('⚠️ new : alias « Dante » = premier mot');expect(byId('gen-report').textContent).toBe('Compte rendu');expect(byId('gen-apply').disabled).toBe(false);
+ const polls=fetch.mock.calls.length;await vi.advanceTimersByTimeAsync(1000);expect(fetch.mock.calls.slice(polls).some(([path])=>path==='/api/generation')).toBe(false);
+ await click('gen-apply');expect(confirm).toHaveBeenCalledWith(expect.stringContaining('1 questions'));expect(fetch.mock.calls.some(([path])=>path==='/api/generation/apply')).toBe(false);
+ confirm.mockReturnValue(true);await click('gen-apply');expect(byId('gen-status').textContent).toBe('Banque remplacée. Sauvegarde : questions.before-merge-1.json.');
+ expect(byId('gen-apply').disabled).toBe(true);expect(byId('question-list').querySelector('input').value).toBe('new');
+ generation={...generation,applied:null,batch:{...generation.batch,errors:['new : alias cité comme piège'],warnings:[]}};await click('generate');
+ generation={...generation,status:'done',started:1,finished:1,cost_usd:null,batch:{questions:[],errors:['Le lot n’a pas été écrit'],warnings:[]}};await vi.advanceTimersByTimeAsync(1000);
+ expect(byId('gen-checks').textContent).toBe('❌ Le lot n’a pas été écrit');expect(byId('gen-apply').disabled).toBe(true);expect(byId('gen-status').textContent).toContain('0 min 0 s.');
+ await click('generate');await click('generate-cancel');expect(byId('gen-status').textContent).toBe('Génération annulée.');expect(byId('generate').disabled).toBe(false);
 });
