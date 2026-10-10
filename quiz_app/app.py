@@ -271,21 +271,26 @@ LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "testserver"})
 Boundary = Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]
 
 
+def foreign_request(request: Request, remote_hosts: frozenset[str]) -> str | None:
+    """Return the error code for a foreign host or origin; remote hosts come through the HTTPS proxy."""
+    hostname = request.url.hostname
+    if hostname not in LOCAL_HOSTS | remote_hosts:
+        return "HOST_FORBIDDEN"
+    host = request.headers.get("host")
+    allowed = {f"{request.url.scheme}://{host}"}
+    if hostname in remote_hosts:
+        # tailscale serve terminates HTTPS and forwards plain HTTP to the loopback port.
+        allowed.add(f"https://{host}")
+    origin = request.headers.get("origin")
+    return "ORIGIN_FORBIDDEN" if origin and origin not in allowed else None
+
+
 def local_boundary(remote_hosts: frozenset[str] = frozenset()) -> Boundary:
-    """Reject foreign hosts and origins; remote hosts are only reachable through the HTTPS Tailscale proxy."""
+    """Reject foreign hosts, origins and oversized bodies; never let browsers keep a stale dashboard."""
 
     async def boundary(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        hostname = request.url.hostname
-        if hostname not in LOCAL_HOSTS | remote_hosts:
-            return JSONResponse({"error": "HOST_FORBIDDEN"}, status_code=403)
-        host = request.headers.get("host")
-        allowed = {f"{request.url.scheme}://{host}"}
-        if hostname in remote_hosts:
-            # tailscale serve terminates HTTPS and forwards plain HTTP to the loopback port.
-            allowed.add(f"https://{host}")
-        origin = request.headers.get("origin")
-        if origin and origin not in allowed:
-            return JSONResponse({"error": "ORIGIN_FORBIDDEN"}, status_code=403)
+        if error := foreign_request(request, remote_hosts):
+            return JSONResponse({"error": error}, status_code=403)
         if request.method in ("POST", "PUT") and len(await request.body()) > 1_000_000:
             return JSONResponse({"error": "PAYLOAD_TOO_LARGE"}, status_code=413)
         response = await call_next(request)
