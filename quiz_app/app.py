@@ -288,7 +288,11 @@ def local_boundary(remote_hosts: frozenset[str] = frozenset()) -> Boundary:
             return JSONResponse({"error": "ORIGIN_FORBIDDEN"}, status_code=403)
         if request.method in ("POST", "PUT") and len(await request.body()) > 1_000_000:
             return JSONResponse({"error": "PAYLOAD_TOO_LARGE"}, status_code=413)
-        return await call_next(request)
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            # Revalidate the dashboard on every load so a stale cached script never survives an update.
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     return boundary
 

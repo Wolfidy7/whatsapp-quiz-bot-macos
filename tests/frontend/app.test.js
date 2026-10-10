@@ -97,8 +97,10 @@ it('generates a batch in the background, reviews it and replaces the bank only a
  mockApi();vi.stubGlobal('confirm',vi.fn(()=>false));await import('../../quiz_app/static/app.js');
  expect(byId('gen-status').textContent).toBe('Aucune génération en cours.');expect(byId('gen-review').hidden).toBe(true);
  byId('gen-themes').value='';await click('generate');expect(fetch.mock.calls.some(([path,opts])=>path==='/api/generation'&&opts.method==='POST')).toBe(false);
+ expect(byId('gen-status').textContent).toContain('Indiquez les thèmes');expect(byId('notice').textContent).toContain('Indiquez les thèmes');
+ byId('gen-themes').value='sport';failure={error:'ORIGIN_FORBIDDEN'};await click('generate');expect(byId('gen-status').textContent).toBe('"ORIGIN_FORBIDDEN"');
  byId('gen-themes').value='  anime, sport ';byId('gen-count').value='12';byId('gen-difficulty').value='difficile';await click('generate');
- expect(JSON.parse(fetch.mock.calls.find(([path,opts])=>path==='/api/generation'&&opts.method==='POST')[1].body)).toEqual({themes:'anime, sport',count:12,difficulty:'difficile'});
+ expect(JSON.parse(fetch.mock.calls.findLast(([path,opts])=>path==='/api/generation'&&opts.method==='POST')[1].body)).toEqual({themes:'anime, sport',count:12,difficulty:'difficile'});
  expect(byId('generate').disabled).toBe(true);expect(byId('generate-cancel').disabled).toBe(false);expect(byId('gen-form-fields').disabled).toBe(true);
  expect(byId('gen-status').textContent).toContain('Génération en cours · 1 min');expect(byId('gen-events').textContent).toBe('Chargement du skill generate-questions');
  generation={...generation,status:'done',finished:generation.started+90,cost_usd:1.5,report:'Compte rendu',events:[...generation.events,'Contrôle du lot (check_questions.py)'],

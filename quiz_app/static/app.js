@@ -117,9 +117,14 @@ bind('export',async()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(a
 byId('import').addEventListener('change',()=>action(async()=>{const file=byId('import').files[0];if(file)byId('bank').value=JSON.stringify(parseBank(await file.text()),null,2);}));
 /** Fetch and render the background question generation. */
 async function refreshGeneration(){generation=await api('generation');renderGeneration(generation);}
-bind('generate',async()=>{if(!byId('gen-form').reportValidity())return;generation=await api('generation','POST',readGeneration());renderGeneration(generation);});
-bind('generate-cancel',async()=>{generation=await api('generation/cancel','POST');renderGeneration(generation);});
-bind('gen-apply',async()=>{
+/** Bind a generation action whose failures also appear next to its form, not only in the top notice. */
+function bindGeneration(id,work){bind(id,async()=>{try{await work();}catch(error){byId('gen-status').textContent=error.message;throw error;}});}
+bindGeneration('generate',async()=>{
+ if(!byId('gen-form').reportValidity())throw new Error('Indiquez les thèmes et un nombre de questions entre 1 et 200.');
+ byId('gen-status').textContent='Démarrage de la génération…';generation=await api('generation','POST',readGeneration());renderGeneration(generation);
+});
+bindGeneration('generate-cancel',async()=>{generation=await api('generation/cancel','POST');renderGeneration(generation);});
+bindGeneration('gen-apply',async()=>{
  if(!confirm(`Remplacer toute la banque par ces ${generation.batch.questions.length} questions ? L’ancienne banque sera sauvegardée.`))return;
  generation=await api('generation/apply','POST');renderGeneration(generation);renderBank(await api('questions'));
 });
