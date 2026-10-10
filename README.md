@@ -111,11 +111,11 @@ Open-round points on the dashboard are **provisional and use the local fallback 
 To generate questions with an AI, use the Claude Code skill `/generate-questions <thèmes> <nombre> <difficulté>`, for example `/generate-questions cinéma, manga 40 difficile`. It works in five steps:
 1. It follows the prompt in [docs/question-generation-prompt.md](docs/question-generation-prompt.md), which documents the measured best way to write `criteria.false`.
 2. It writes the batch to `data/generated-questions.json`.
-3. It runs `scripts/check_questions.py`, which checks the schema, id conflicts, the criteria rules and unsafe aliases.
+3. It runs `scripts/check_questions.py`, which checks the schema, the criteria rules and unsafe aliases.
 4. It re-checks the facts.
-5. It merges the batch into the bank after a timestamped backup.
+5. It replaces the whole bank with the batch after a timestamped backup.
 
-You can also run the checker on any batch yourself: `python scripts/check_questions.py <batch.json> [--merge]`. The prompt can still be pasted into any other assistant.
+You can also run the checker on any batch yourself: `python scripts/check_questions.py <batch.json> [--merge | --replace]`. `--merge` appends the batch to the bank and also checks id conflicts with it; `--replace` overwrites the bank. The prompt can still be pasted into any other assistant.
 
 Save, import or export the bank from the dashboard. The tester calls jev with the draft question, threshold and model, including unsaved changes, and shows the score or the fallback reason. Saving a bank never changes a running game's frozen rules or previously awarded points. Older banks using `answer` and `grading_mode` are rejected. To rewrite one, open **Gérer la banque de questions** and select each question. A legacy `answer` prefills **Critère vrai**. Fill in **Critère faux** and the optional fallback aliases, click **Appliquer au brouillon JSON**, which also drops the retired fields, then **Enregistrer les questions**. The threshold is set under **Seuil de confiance jev**, and the model under the advanced settings. The game history shows, for each answer, its jev score or `repli local`.
 

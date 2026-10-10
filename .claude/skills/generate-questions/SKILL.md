@@ -1,6 +1,6 @@
 ---
 name: generate-questions
-description: Génère un lot de questions de quiz pour le bot WhatsApp (format jev avec criteria true/false et alias), les vérifie, puis les ajoute à la banque data/questions.json. À utiliser dès que l'utilisateur veut créer, générer, ajouter ou préparer des questions de quiz, même sans dire « skill », par exemple « fais-moi 30 questions sur le cinéma, niveau difficile » ou « ajoute des questions de géo à la banque ».
+description: Génère un lot de questions de quiz pour le bot WhatsApp (format jev avec criteria true/false et alias), les vérifie, puis remplace entièrement la banque data/questions.json par ce lot. À utiliser dès que l'utilisateur veut créer, générer, ajouter ou préparer des questions de quiz, même sans dire « skill », par exemple « fais-moi 30 questions sur le cinéma, niveau difficile » ou « refais une banque de questions de géo ».
 argument-hint: "<thèmes> <nombre> <difficulté> — ex. « cinéma, manga 40 difficile »"
 ---
 
@@ -8,7 +8,7 @@ argument-hint: "<thèmes> <nombre> <difficulté> — ex. « cinéma, manga 40 di
 
 Demande de l'utilisateur : $ARGUMENTS
 
-Le but est d'ajouter à `data/questions.json` des questions que jev note correctement : une bonne réponse est acceptée, et aucun piège plausible ne passe. Les règles qui le garantissent ont été mesurées sur sept lots d'environ 100 questions. Elles se trouvent dans `docs/question-generation-prompt.md`, qui reste la seule source de vérité. Ne les recopie pas de mémoire.
+Le but est de remplacer tout le contenu de `data/questions.json` par un nouveau lot de questions que jev note correctement : une bonne réponse est acceptée, et aucun piège plausible ne passe. Les règles qui le garantissent ont été mesurées sur sept lots d'environ 100 questions. Elles se trouvent dans `docs/question-generation-prompt.md`, qui reste la seule source de vérité. Ne les recopie pas de mémoire.
 
 ## 1. Paramètres
 
@@ -22,11 +22,11 @@ Si le nombre ou les thèmes manquent, demande-les. Si seule la difficulté manqu
 ## 2. Contexte à lire
 
 - Lis la section `## Prompt` de `docs/question-generation-prompt.md` en entier. C'est ton cahier des charges : format, choix des questions, règles des critères, alias, explication et vérification finale. La section « Ce que les tests ont montré », plus haut, explique pourquoi chaque règle existe. Lis-la si une règle te semble arbitraire.
-- Lis `data/questions.json`, s'il existe, pour connaître les questions et les identifiants déjà présents. Il ne faut ni doublon ni conflit d'identifiant.
+- Inutile de lire `data/questions.json` : le lot remplace la banque. Les identifiants doivent seulement être uniques dans le lot.
 
 ## 3. Générer
 
-Rédige le lot en suivant le prompt, puis écris-le dans `data/generated-questions.json`, sous forme de tableau JSON seul. Ce fichier sert d'intermédiaire avant la fusion : il est écrasé à chaque appel.
+Rédige le lot en suivant le prompt, puis écris-le dans `data/generated-questions.json`, sous forme de tableau JSON seul. Ce fichier sert d'intermédiaire avant l'enregistrement : il est écrasé à chaque appel.
 
 Points qui ont causé le plus d'erreurs lors des itérations précédentes :
 - **Alias.** Ils sont acceptés d'office, sans passer par jev. Un alias insuffisant donne donc des points à tort. Exemples à proscrire : un prénom seul, une description vague, ou un mot déjà présent dans la question.
@@ -41,7 +41,6 @@ PYTHONPATH=. .venv/bin/python scripts/check_questions.py data/generated-question
 
 Le script vérifie :
 - le schéma de l'application ;
-- les conflits d'identifiants avec la banque ;
 - la forme de `criteria.false` ;
 - l'absence de consigne dans `criteria.true` ;
 - les alias dangereux.
@@ -60,20 +59,20 @@ Pour chaque question, vérifie :
 
 Utilise la recherche web pour les faits récents, chiffrés ou dont tu n'es pas certain. Remplace une question douteuse plutôt que de la garder avec une réserve. Relance ensuite le contrôle de l'étape 4.
 
-## 6. Ajouter à la banque
+## 6. Remplacer la banque
 
 ```bash
-PYTHONPATH=. .venv/bin/python scripts/check_questions.py data/generated-questions.json --merge
+PYTHONPATH=. .venv/bin/python scripts/check_questions.py data/generated-questions.json --replace
 ```
 
-Le script refait tous les contrôles et refuse de fusionner s'il reste une erreur. Sinon, il sauvegarde la banque dans `data/questions.before-merge-<date>.json`, puis ajoute les questions en passant par la validation de l'application.
+Le script refait tous les contrôles et refuse d'enregistrer s'il reste une erreur. Sinon, il sauvegarde l'ancienne banque dans `data/questions.before-merge-<date>.json`, puis la remplace entièrement par le lot en passant par la validation de l'application. Les anciennes questions ne restent que dans cette sauvegarde.
 
 ## 7. Compte rendu
 
 Termine par un court résumé :
-- le nombre de questions ajoutées, par thème, et la difficulté ;
+- le nombre de questions de la nouvelle banque, par thème, et la difficulté ;
 - les questions remplacées pendant la relecture des faits, avec la raison ;
 - les avertissements conservés ;
-- le chemin de la sauvegarde.
+- le nombre de questions retirées et le chemin de la sauvegarde.
 
 N'affiche pas le JSON complet : il est dans la banque.

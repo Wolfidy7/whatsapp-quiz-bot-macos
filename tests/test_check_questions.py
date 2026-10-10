@@ -60,3 +60,12 @@ def test_cli_reports_merges_with_backup_and_rejects(tmp_path, capsys):
     assert main([str(tmp_path / 'broken.json'), '--bank', str(bank)]) == 1
     assert main([str(tmp_path / 'missing.json'), '--bank', str(bank)]) == 1
     assert 'Lecture impossible' in capsys.readouterr().out
+
+def test_cli_replace_discards_bank_after_backup(tmp_path, capsys):
+    bank = write(tmp_path / 'questions.json', [q('old'), q('new', question='Ancienne ?')])
+    batch = write(tmp_path / 'batch.json', [q('new')])
+    assert main([str(batch), '--bank', str(bank), '--replace']) == 0
+    assert [x.id for x in load_bank(bank)] == ['new']
+    backups = list(tmp_path.glob('questions.before-merge-*.json'))
+    assert len(backups) == 1 and [x.id for x in load_bank(backups[0])] == ['old', 'new']
+    assert '2 retirées' in capsys.readouterr().out
