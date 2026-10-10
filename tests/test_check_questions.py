@@ -1,5 +1,6 @@
 import json
-from scripts.check_questions import check, main
+from quiz_app.batches import check
+from scripts.check_questions import main
 from quiz_app.models import Question
 from quiz_app.repository import load_bank
 
