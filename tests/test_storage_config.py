@@ -141,3 +141,13 @@ def test_remote_hosts_stay_outside_settings_and_survive_saves(tmp_path,settings)
     assert load_remote_hosts(path)=={'mac.tail1234.ts.net','b.ts.net'}
     broken=tmp_path/'broken';broken.write_text('X')
     with pytest.raises(QuizError):load_remote_hosts(broken)
+
+
+def test_retired_max_questions_is_ignored_in_env_and_archives(tmp_path,settings):
+    from quiz_app.config import save_settings
+    path=tmp_path/'.env'
+    save_settings(path,settings)
+    path.write_text(path.read_text()+'MAX_QUESTIONS=30\n')
+    assert 'max_questions' not in load_settings(path).model_dump()
+    from quiz_app.models import Settings
+    assert Settings.model_validate(settings.model_dump()|{'max_questions':3})==settings

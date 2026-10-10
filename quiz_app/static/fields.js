@@ -2,7 +2,7 @@
 export const fields = [
  ['whatsapp_group','Groupe WhatsApp','text',null,null,'wide'],
  ['nb_players_expected','Minimum de joueurs','number',1,1000],['max_players','Maximum de joueurs','number',1,1000],
- ['max_questions','Nombre de questions','number',1,1000],['registration_seconds','Inscriptions (secondes)','number',1,3600],
+ ['registration_seconds','Inscriptions (secondes)','number',1,3600],
  ['question_seconds','Temps par question (secondes)','number',1,3600],['interval_seconds','Pause entre questions (secondes)','number',0,3600],
  ['max_points','Premier : points maximum','number',1,100000],['min_points','Dernier : points minimum','number',1,100000],
  ['jev_threshold','Seuil de confiance jev (0 à 1)','number',0,1],

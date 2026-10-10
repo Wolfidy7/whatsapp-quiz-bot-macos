@@ -62,7 +62,6 @@ Use **Arrêter** in the fixed header or beside **Démarrer** to cancel at any st
 | `WHATSAPP_GROUP` | `Test` | Exact native group name (automatically searched at startup) |
 | `MAX_PLAYERS` | 20 | Registration limit; enrolled count freezes at closure |
 | `NB_PLAYERS_EXPECTED` | 1 | Minimum enrollment at closure; fewer players cancels the game |
-| `MAX_QUESTIONS` | 30 | Maximum questions per game |
 | `REGISTRATION_SECONDS` | 60 | Registration window |
 | `QUESTION_SECONDS` | 30 | Answer window before publishing STOP |
 | `INTERVAL_SECONDS` | 10 | Delay after round results |
@@ -144,7 +143,7 @@ Save, import or export the bank from the dashboard. The tester calls jev with th
 
 ## Rehearse without sending anything
 
-1. Choose **Simulation locale · aucun envoi**, select questions and click **Démarrer**; all bank questions are initially selected, up to the configured limit.
+1. Choose **Simulation locale · aucun envoi**, select questions and click **Démarrer**; all bank questions are initially selected.
 2. Submit `!join` with fictional player names from **Simuler un joueur**.
 3. When enrollment closes, submit `!r Paris` for the active question. No question number is needed.
 4. Watch the STOP, results, next question and final scoreboard in the stored session evidence.
@@ -242,11 +241,11 @@ Use the normal game engine for multiple questions, intermediate scores and a fin
 python -m scripts.play_rehearsal
 ```
 
-Configure `WHATSAPP_GROUP`, `NB_PLAYERS_EXPECTED`, `MAX_PLAYERS`, `MAX_QUESTIONS`, `REGISTRATION_SECONDS`, `QUESTION_SECONDS` and `INTERVAL_SECONDS` in `.env`. The default bank is `data/questions.json`, resolved from the project directory. No command-line parameters are required. The command launches WhatsApp when necessary and opens the configured group automatically. Ensure its composer is empty, stop the web service, and have the configured number of other accounts ready. Everyone must send `!join` after enrollment opens.
+Configure `WHATSAPP_GROUP`, `NB_PLAYERS_EXPECTED`, `MAX_PLAYERS`, `REGISTRATION_SECONDS`, `QUESTION_SECONDS` and `INTERVAL_SECONDS` in `.env`. The default bank is `data/questions.json`, resolved from the project directory. No command-line parameters are required. The command launches WhatsApp when necessary and opens the configured group automatically. Ensure its composer is empty, stop the web service, and have the configured number of other accounts ready. Everyone must send `!join` after enrollment opens.
 
 `NB_PLAYERS_EXPECTED` is the minimum enrollment count, while `MAX_PLAYERS` is the cap. At the registration deadline, the engine closes enrollment and checks the complete conversation segment. Below the minimum, it announces cancellation and archives the game as cancelled without posting any question. Meeting the minimum starts the game, even below the cap; extra players do not end registration early. This rule also applies to dashboard games. The minimum must be an integer from 1 to `MAX_PLAYERS`; when omitted in older configurations or archives, it defaults to 1. A cancellation announcement with an uncertain delivery pauses for explicit recovery rather than being replayed.
 
-The selected bank supplies the questions, limited by `MAX_QUESTIONS`. Players answer naturally with `!r their answer`; no predetermined reply sequence is required. Intermediate and final scores are published in WhatsApp and printed in the terminal.
+The selected bank supplies every question, in order. Players answer naturally with `!r their answer`; no predetermined reply sequence is required. Intermediate and final scores are published in WhatsApp and printed in the terminal.
 
 Defaults come from `.env`; explicit command-line overrides apply only to this session snapshot. Every run creates a fresh archived game under `data/sessions/`. Stop with Ctrl+C; interrupted games are never automatically resumed or replayed. The dashboard's **WhatsApp · partie de test réelle** mode provides the same explicit rehearsal capability without game commands in the terminal. Neither rehearsal entry point creates a validation receipt or changes the validated-transport gate.
 
