@@ -1,6 +1,7 @@
 """Loopback-only HTTP control plane with serialized game and storage mutations."""
 
 import asyncio
+import hashlib
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -8,9 +9,8 @@ from pathlib import Path
 from threading import Event, RLock
 from typing import Literal
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import Field
 
 from quiz_app.ax_reader import AXReader
@@ -28,6 +28,17 @@ from quiz_app.storage import locked, read_json
 from quiz_app.transport import Simulator, Transport
 
 ROOT = Path(__file__).resolve().parent.parent
+STATIC = Path(__file__).resolve().parent / "static"
+IMMUTABLE = "public, max-age=31536000, immutable"
+
+
+def asset_version(static: Path = STATIC) -> str:
+    """Fingerprint the dashboard files, so every change gets new asset URLs that no browser has cached."""
+    digest = hashlib.sha256()
+    for path in sorted(static.iterdir()):
+        if path.is_file():
+            digest.update(path.name.encode() + b"\0" + path.read_bytes())
+    return digest.hexdigest()[:12]
 
 
 class StartRequest(StrictModel):
@@ -295,8 +306,8 @@ def local_boundary(remote_hosts: frozenset[str] = frozenset()) -> Boundary:
             return JSONResponse({"error": "PAYLOAD_TOO_LARGE"}, status_code=413)
         response = await call_next(request)
         if not request.url.path.startswith("/api/"):
-            # Revalidate the dashboard on every load so a stale cached script never survives an update.
-            response.headers["Cache-Control"] = "no-cache"
+            # Revalidate the page itself on every load; fingerprinted assets set their own long cache.
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     return boundary
@@ -400,12 +411,20 @@ def create_app(root: Path = ROOT, background: bool = True, runner: Runner = clau
     app.post("/api/cancel")(controller.cancel)
     app.post("/api/resume")(controller.resume)
     app.post("/api/recover/{session_id}")(controller.recover)
-    static = Path(__file__).parent / "static"
-    app.mount("/static", StaticFiles(directory=static), name="static")
+
+    @app.get("/static/{version}/{name}")
+    def asset(version: str, name: str) -> FileResponse:
+        """Serve a dashboard file; the current fingerprint may be cached forever, any other revalidates."""
+        path = STATIC / name
+        if "/" in name or name.startswith(".") or not path.is_file():
+            raise HTTPException(status_code=404)
+        current = version == asset_version()
+        return FileResponse(path, headers={"Cache-Control": IMMUTABLE if current else "no-cache"})
 
     @app.get("/")
-    def index() -> FileResponse:
-        """Serve the local dashboard without embedding private configuration."""
-        return FileResponse(static / "index.html")
+    def index() -> HTMLResponse:
+        """Serve the dashboard with fingerprinted asset URLs, so a phone never mixes old and new files."""
+        page = (STATIC / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(page.replace('"/static/', f'"/static/{asset_version()}/'))
 
     return app

@@ -15,7 +15,7 @@ def test_real_rehearsal_command_is_fully_simulated(tmp_path,question,use_overrid
     env=tmp_path/'.env';env.write_text(env.read_text().replace('NB_PLAYERS_EXPECTED=1','NB_PLAYERS_EXPECTED=2'))
     if not use_overrides:
         env=tmp_path/'.env'
-        text=env.read_text().replace('WHATSAPP_GROUP="Test"','WHATSAPP_GROUP="Fictional group"').replace('MAX_PLAYERS=20','MAX_PLAYERS=5').replace('MAX_QUESTIONS=30','MAX_QUESTIONS=3').replace('REGISTRATION_SECONDS=60','REGISTRATION_SECONDS=1').replace('QUESTION_SECONDS=30','QUESTION_SECONDS=1')
+        text=env.read_text().replace('WHATSAPP_GROUP="Test"','WHATSAPP_GROUP="Fictional group"').replace('MAX_PLAYERS=20','MAX_PLAYERS=5').replace('REGISTRATION_SECONDS=60','REGISTRATION_SECONDS=1').replace('QUESTION_SECONDS=30','QUESTION_SECONDS=1')
         env.write_text(text)
     bank=tmp_path/'custom-questions.json' if use_overrides else tmp_path/'data/questions.json'
     bank.parent.mkdir(parents=True,exist_ok=True)

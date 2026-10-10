@@ -43,26 +43,33 @@ To launch games from your phone or another computer, publish the dashboard to yo
 
 Native games still drive the WhatsApp window: the Mac must stay on, awake (`caffeinate -dis`) and unlocked, with WhatsApp available. To stop remote access, run `tailscale serve reset`. Do not use `tailscale funnel`, which publishes the dashboard on the public internet.
 
-The dashboard loads its defaults from `.env`. Edit them in **Préparer la partie**, select questions, choose a mode and click **Démarrer**. There is no need to supply terminal parameters for each game. **Enregistrer dans le .env** saves the defaults atomically to the private file; **Démarrer** uses the current form values even if you have not saved them. Every new game snapshots its settings and selected questions; changing the bank or defaults never changes a running game. Advanced options include commands, polling, native database path and server port. A port change takes effect only after restarting the server.
+The dashboard has four tabs, shown as a bottom bar on phones:
+- **Jouer**: choose where to play and which questions, then **Lancer la partie**; during a game, follow the live view.
+- **Questions**: generate a batch with Claude, browse the bank, tune and test the correction, or edit the bank as JSON.
+- **Réglages**: game defaults from `.env`, grouped by players, timing, points and correction, plus an **Avancé** section.
+- **Historique**: the answers of the last game, and reopening an archived game.
+
+A summary above **Lancer la partie** shows the number of questions and the settings the game will use. **Lancer la partie** uses the settings form as it is, even unsaved; the summary then says so, and a bar in **Réglages** offers to save or discard the changes. **Enregistrer** writes them atomically to `.env`. Every new game snapshots its settings and the ticked questions, and plays every ticked question; changing the bank or defaults never changes a running game. A port change takes effect only after restarting the server.
+
+Successes and information appear as notifications. Errors stay on screen until closed: they give a French explanation and the next step, both in the notification and next to the action that failed, with the server's raw detail underneath. If the page script cannot start, for example in an outdated browser, the page says so instead of staying inert.
 
 Choose one of three explicit modes:
 
-- **WhatsApp · partie de test réelle** launches WhatsApp if necessary, finds the configured group and publishes a real rehearsal. This mode does not create a transport-validation receipt.
-- **WhatsApp · transport validé** requires a matching private controlled-test receipt before publishing.
-- **Simulation locale · aucun envoi** runs entirely locally and reveals the simulated-player controls.
+- **Répétition WhatsApp** launches WhatsApp if necessary, finds the configured group and publishes a real rehearsal. This mode does not create a transport-validation receipt.
+- **Partie validée** requires a matching private controlled-test receipt before publishing; it is greyed out until then.
+- **Simulation** runs entirely locally and reveals the simulated-player controls.
 
-The live view shows automatically discovered participant names, the active question, remaining time and accumulated scores. It refreshes once per second; collection uses the snapshotted `POLL_SECONDS`. Open-round points are clearly labeled **PROVISOIRE** and become confirmed only after STOP and complete segment verification. An incomplete or ambiguous collection pauses the game and never becomes a confirmed ranking.
+The live view shows automatically discovered participant names, the active question, remaining time and accumulated scores. It refreshes once per second; collection uses the snapshotted `POLL_SECONDS`. The ranking appears after the first question. Open-round points are clearly labeled **Provisoire** and become confirmed only after STOP and complete segment verification. An incomplete or ambiguous collection pauses the game and never becomes a confirmed ranking.
 
 After each round's answer and intermediate ranking, the same message announces how many seconds remain before the next question, using `INTERVAL_SECONDS`. The interval starts after the result announcement is confirmed. A zero interval announces an immediate next question; the last round does not announce another question.
 
-Use **Arrêter** in the fixed header or beside **Démarrer** to cancel at any stage, including native startup. The request is signaled immediately while a native operation finishes; it prevents subsequent sends and ends the game locally without an extra WhatsApp announcement. A message already being published cannot be recalled. Cancelled and finished games do not continue polling WhatsApp or rewriting their archives.
+Use **Arrêter la partie** in the fixed header to cancel at any stage, including native startup. The request is signaled immediately while a native operation finishes; it prevents subsequent sends and ends the game locally without an extra WhatsApp announcement. A message already being published cannot be recalled. Cancelled and finished games do not continue polling WhatsApp or rewriting their archives.
 
 | Variable | Example | Meaning |
 |---|---:|---|
 | `WHATSAPP_GROUP` | `Test` | Exact native group name (automatically searched at startup) |
 | `MAX_PLAYERS` | 20 | Registration limit; enrolled count freezes at closure |
 | `NB_PLAYERS_EXPECTED` | 1 | Minimum enrollment at closure; fewer players cancels the game |
-| `MAX_QUESTIONS` | 30 | Maximum questions per game |
 | `REGISTRATION_SECONDS` | 60 | Registration window |
 | `QUESTION_SECONDS` | 30 | Answer window before publishing STOP |
 | `INTERVAL_SECONDS` | 10 | Delay after round results |
@@ -127,7 +134,7 @@ To generate questions with an AI, use the Claude Code skill `/generate-questions
 4. It re-checks the facts.
 5. It replaces the whole bank with the batch after a timestamped backup.
 
-**From the dashboard.** Open **Générer des questions avec Claude**, enter the themes, the number of questions and the difficulty, then click **Générer**. The server runs the same skill on the Mac through the [Claude Agent SDK](https://pypi.org/project/claude-agent-sdk/), using the Claude Code login of the Mac, and charges that account like a terminal run. Generation runs in the background and takes a few minutes; the page shows its progress, and it continues if you close the page. Only one generation runs at a time, and **Annuler la génération** stops it. When it finishes, the dashboard lists the questions with their answers, the checker's errors and warnings, and Claude's report. The bank is untouched until you click **Remplacer la banque par ce lot** and confirm. The app then backs up the bank in `data/questions.before-merge-<date>.json` and saves the batch through its usual validation. Replacing is refused while a game is running, or when the batch has errors.
+**From the dashboard.** In the **Questions** tab, under **Générer avec Claude**, enter the themes, the number of questions and the difficulty, then click **Générer**. The server runs the same skill on the Mac through the [Claude Agent SDK](https://pypi.org/project/claude-agent-sdk/), using the Claude Code login of the Mac, and charges that account like a terminal run. Generation runs in the background and takes a few minutes; the page shows its progress, and it continues if you close the page. Only one generation runs at a time, and **Annuler** stops it. When it finishes, the dashboard lists the questions with their answers, the checker's errors and warnings, and Claude's report. The bank is untouched until you click **Remplacer la banque par ce lot** and confirm. The app then backs up the bank in `data/questions.before-merge-<date>.json` and saves the batch through its usual validation. Replacing is refused while a game is running, or when the batch has errors.
 
 The agent is restricted to the skill's workflow. A `PreToolUse` hook allows or refuses every tool call, and only project settings are loaded, so your global Claude Code permissions do not apply. The agent may:
 - run the `generate-questions` skill;
@@ -140,11 +147,11 @@ Refused calls appear in the progress log. Claude Code must be installed and sign
 
 You can also run the checker on any batch yourself: `python scripts/check_questions.py <batch.json> [--merge | --replace]`. `--merge` appends the batch to the bank and also checks id conflicts with it; `--replace` overwrites the bank. The prompt can still be pasted into any other assistant.
 
-Save, import or export the bank from the dashboard. The tester calls jev with the draft question, threshold and model, including unsaved changes, and shows the score or the fallback reason. Saving a bank never changes a running game's frozen rules or previously awarded points. Older banks using `answer` and `grading_mode` are rejected. To rewrite one, open **Gérer la banque de questions** and select each question. A legacy `answer` prefills **Critère vrai**. Fill in **Critère faux** and the optional fallback aliases, click **Appliquer au brouillon JSON**, which also drops the retired fields, then **Enregistrer les questions**. The threshold is set under **Seuil de confiance jev**, and the model under the advanced settings. The game history shows, for each answer, its jev score or `repli local`.
+In the **Questions** tab, **Régler la correction** edits the selected question's criteria and aliases; 🎯 next to a bank question selects it. **Enregistrer ces critères** saves them to the bank. **Tester** calls jev with the criteria as typed, saved or not, and the threshold and model of the settings form, then shows whether the answer is accepted and why. **Éditer la banque en JSON** saves, imports or exports the whole bank; an import fills the editor, and **Enregistrer** applies it. Saving a bank never changes a running game's frozen rules or previously awarded points. Older banks using `answer` and `grading_mode` are rejected. To rewrite one, select each question in **Régler la correction**: a legacy `answer` prefills the expected answer. Fill in the answers to refuse and the aliases, then click **Enregistrer ces critères**, which also drops the retired fields. The threshold is set under **Seuil de confiance jev**, and the model under the advanced settings. The **Historique** tab shows, for each answer, its jev score or `repli local`.
 
 ## Rehearse without sending anything
 
-1. Choose **Simulation locale · aucun envoi**, select questions and click **Démarrer**; all bank questions are initially selected, up to the configured limit.
+1. In **Jouer**, choose **Simulation**, tick questions and click **Lancer la partie**; all bank questions are initially ticked.
 2. Submit `!join` with fictional player names from **Simuler un joueur**.
 3. When enrollment closes, submit `!r Paris` for the active question. No question number is needed.
 4. Watch the STOP, results, next question and final scoreboard in the stored session evidence.
@@ -242,13 +249,13 @@ Use the normal game engine for multiple questions, intermediate scores and a fin
 python -m scripts.play_rehearsal
 ```
 
-Configure `WHATSAPP_GROUP`, `NB_PLAYERS_EXPECTED`, `MAX_PLAYERS`, `MAX_QUESTIONS`, `REGISTRATION_SECONDS`, `QUESTION_SECONDS` and `INTERVAL_SECONDS` in `.env`. The default bank is `data/questions.json`, resolved from the project directory. No command-line parameters are required. The command launches WhatsApp when necessary and opens the configured group automatically. Ensure its composer is empty, stop the web service, and have the configured number of other accounts ready. Everyone must send `!join` after enrollment opens.
+Configure `WHATSAPP_GROUP`, `NB_PLAYERS_EXPECTED`, `MAX_PLAYERS`, `REGISTRATION_SECONDS`, `QUESTION_SECONDS` and `INTERVAL_SECONDS` in `.env`. The default bank is `data/questions.json`, resolved from the project directory. No command-line parameters are required. The command launches WhatsApp when necessary and opens the configured group automatically. Ensure its composer is empty, stop the web service, and have the configured number of other accounts ready. Everyone must send `!join` after enrollment opens.
 
 `NB_PLAYERS_EXPECTED` is the minimum enrollment count, while `MAX_PLAYERS` is the cap. At the registration deadline, the engine closes enrollment and checks the complete conversation segment. Below the minimum, it announces cancellation and archives the game as cancelled without posting any question. Meeting the minimum starts the game, even below the cap; extra players do not end registration early. This rule also applies to dashboard games. The minimum must be an integer from 1 to `MAX_PLAYERS`; when omitted in older configurations or archives, it defaults to 1. A cancellation announcement with an uncertain delivery pauses for explicit recovery rather than being replayed.
 
-The selected bank supplies the questions, limited by `MAX_QUESTIONS`. Players answer naturally with `!r their answer`; no predetermined reply sequence is required. Intermediate and final scores are published in WhatsApp and printed in the terminal.
+The selected bank supplies every question, in order. Players answer naturally with `!r their answer`; no predetermined reply sequence is required. Intermediate and final scores are published in WhatsApp and printed in the terminal.
 
-Defaults come from `.env`; explicit command-line overrides apply only to this session snapshot. Every run creates a fresh archived game under `data/sessions/`. Stop with Ctrl+C; interrupted games are never automatically resumed or replayed. The dashboard's **WhatsApp · partie de test réelle** mode provides the same explicit rehearsal capability without game commands in the terminal. Neither rehearsal entry point creates a validation receipt or changes the validated-transport gate.
+Defaults come from `.env`; explicit command-line overrides apply only to this session snapshot. Every run creates a fresh archived game under `data/sessions/`. Stop with Ctrl+C; interrupted games are never automatically resumed or replayed. The dashboard's **Répétition WhatsApp** mode provides the same explicit rehearsal capability without game commands in the terminal. Neither rehearsal entry point creates a validation receipt or changes the validated-transport gate.
 
 ## Scoring
 
@@ -266,7 +273,7 @@ For one player, a correct answer receives `MAX_POINTS`. Incorrect and absent rep
 
 Writes use a private temporary file, `fsync`, atomic replacement, a nonblocking file lock and a previous-good `.backup.json`. Corrupt files are never silently repaired or overwritten. A send is reserved as `pending` before publication and becomes `sent` only after confirmation.
 
-After interruption, open **Historique et récupération**, enter the session ID and click **Ouvrir l’archive**. Loading keeps the game paused. **Vérifier et reprendre** checks every pending send against recoverable history before resuming the saved phase. Native sends have a private pre-send sequence reservation and a confirmed WhatsApp message identity in `data/native-deliveries.json`; these identifiers are never appended to public message text. Keep this private ledger with the session archives. Missing, duplicate or unconfirmed native identities block resumption. Older archives with visible markers remain readable. Check WhatsApp manually; if a reserved draft exists, review and send it yourself before verification, or cancel the game. Never edit the outbox statuses to force a replay. **Arrêter** cancels locally without publishing an extra message. Rehearsal archives retain their explicit rehearsal mode; they do not acquire validated status through recovery.
+After interruption, open **Historique**, paste the session ID under **Rouvrir une partie archivée** and click **Ouvrir**. Loading keeps the game paused, and the **Jouer** tab explains the incident and lists the unconfirmed sends. **Vérifier et reprendre** checks every pending send against recoverable history before resuming the saved phase. Native sends have a private pre-send sequence reservation and a confirmed WhatsApp message identity in `data/native-deliveries.json`; these identifiers are never appended to public message text. Keep this private ledger with the session archives. Missing, duplicate or unconfirmed native identities block resumption. Older archives with visible markers remain readable. Check WhatsApp manually; if a reserved draft exists, review and send it yourself before verification, or cancel the game. Never edit the outbox statuses to force a replay. **Arrêter la partie** cancels locally without publishing an extra message. Rehearsal archives retain their explicit rehearsal mode; they do not acquire validated status through recovery.
 
 A collection incident retains the previous observations and does not announce a complete scoreboard. Images, stickers, voice notes, polls, other nontext types, empty text and deletion notices are ignored, including media captions that resemble answer commands. Deleting or editing an observed registration or reply does not interrupt the game: its first collected text and identity remain frozen, and a later message cannot replace a player's first answer. A message deleted before collection is simply ignored. Observed native sequence values preserve the order of retained deleted answers and newly collected messages across JSON recovery. Legacy archives without sequence values retain their snapshot order. Identity conflicts, duplicate sequences and missing question/STOP boundaries still require review. Storage failures pause the in-memory controller and must be resolved before a durable recovery. To restore a backup, stop the service, preserve the failed document, copy the validated backup to its original name, restart and load the archive through the interface.
 

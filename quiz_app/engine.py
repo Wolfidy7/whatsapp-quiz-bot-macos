@@ -371,12 +371,12 @@ class Engine:
 
 
 def new_session(settings: Settings, questions: list[Question], mode: str) -> Session:
-    """Validate a fresh snapshot with a unique ID and configured question limit."""
+    """Validate a fresh snapshot with a unique ID; every given question is played."""
     return Session.model_validate(
         dict(
             id=uuid4().hex,
             settings=settings,
-            questions=questions[: settings.max_questions],
+            questions=questions,
             mode=mode,
             phase="registration",
         )

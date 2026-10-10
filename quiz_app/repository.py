@@ -51,7 +51,7 @@ def validate_snapshot(session: Session) -> None:
     ):
         raise QuizError("SESSION_INVALID", "Invalid enrolled-player snapshot")
     ids = [question.id for question in session.questions]
-    if len(set(ids)) != len(ids) or len(ids) > session.settings.max_questions:
+    if len(set(ids)) != len(ids):
         raise QuizError("SESSION_INVALID", "Invalid question snapshot")
     markers = [item.marker for item in session.outbox]
     if len(set(markers)) != len(markers):

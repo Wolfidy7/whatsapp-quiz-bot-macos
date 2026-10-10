@@ -1,48 +1,155 @@
 <!doctype html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quiz WhatsApp · Tableau de bord</title><link rel="stylesheet" href="/static/style.css"></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#6c3bff">
+<title>Quiz Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+<script>
+/* Boot guard: report a script that fails to load (old browser, stale cache) instead of a silent page. */
+(function(){
+ function fail(detail){var box=document.getElementById('boot-error');if(!box||window.quizReady)return;box.hidden=false;
+  document.getElementById('boot-detail').textContent=detail||'';}
+ window.addEventListener('error',function(event){fail(event.message||'Script introuvable');},true);
+ setTimeout(function(){if(!window.quizReady)fail('Le chargement dépasse 8 secondes.');},8000);
+})();
+</script>
+</head>
 <body>
-<header><span class="brand">◈ Quiz studio</span><div class="header-actions"><span class="badge">SUR CE MAC</span><button id="stop-now" class="danger" disabled>■ Arrêter</button></div></header>
+<div id="boot-error" class="boot-error" role="alert" hidden>
+ <strong>🚨 L’interface n’a pas pu démarrer</strong>
+ <p>Rechargez la page. Sur iPhone, fermez l’onglet puis rouvrez l’adresse. Si le problème persiste, mettez à jour votre navigateur.</p>
+ <code id="boot-detail"></code>
+</div>
+<header class="topbar">
+ <div class="brand"><span class="logo" aria-hidden="true">Q?</span><span>Quiz Studio</span></div>
+ <span id="phase" class="pill tone-idle">Prêt</span>
+ <button id="stop-now" class="btn danger small" hidden>■ Arrêter la partie</button>
+</header>
+<nav class="tabs" role="tablist" aria-label="Sections">
+ <button role="tab" data-tab="jouer" id="tab-jouer" aria-controls="panel-jouer"><span aria-hidden="true">🎮</span>Jouer<i class="dot" hidden></i></button>
+ <button role="tab" data-tab="questions" id="tab-questions" aria-controls="panel-questions"><span aria-hidden="true">✨</span>Questions<i class="dot" hidden></i></button>
+ <button role="tab" data-tab="reglages" id="tab-reglages" aria-controls="panel-reglages"><span aria-hidden="true">⚙️</span>Réglages<i class="dot" hidden></i></button>
+ <button role="tab" data-tab="historique" id="tab-historique" aria-controls="panel-historique"><span aria-hidden="true">🗂️</span>Historique<i class="dot" hidden></i></button>
+</nav>
+<div id="toasts" class="toasts" aria-live="polite"></div>
 <main>
-<section class="hero"><p class="eyebrow">VOTRE GROUPE. VOTRE PARTIE.</p><h1>Le quiz, en direct.</h1><p>Préparez la partie, lancez les inscriptions et suivez vos joueurs depuis ce tableau de bord.</p></section>
-<div id="notice" role="status" aria-live="polite">Chargement de vos paramètres…</div>
-<div class="columns">
-<section class="card setup">
-<div class="section-heading"><h2>Préparer la partie</h2><span class="badge">PARAMÈTRES</span></div>
-<p class="muted">Valeurs chargées depuis votre .env. Vos modifications s’appliquent à la prochaine partie.</p>
-<form id="config"><fieldset id="config-fields"><div id="main-settings" class="form-grid"></div><details><summary>Paramètres avancés</summary><div id="advanced-settings" class="form-grid"></div><p class="muted">Un changement de port s’applique après le redémarrage du serveur.</p></details></fieldset></form>
-<div class="actions"><button id="save-settings" class="secondary">Enregistrer dans le .env</button><span id="settings-status" class="muted"></span></div>
-<hr><label for="mode">Mode de jeu</label><select id="mode"><option value="rehearsal">WhatsApp · partie de test réelle</option><option value="native">WhatsApp · transport validé</option><option value="simulation">Simulation locale · aucun envoi</option></select>
-<p id="mode-help" class="muted">Le mode WhatsApp envoie les annonces dans le groupe choisi. Les noms sont récupérés avec les inscriptions.</p>
-<h3>Questions de la partie</h3><p class="muted">Sélectionnez les questions à jouer, dans l’ordre de la banque.</p><div id="question-list" class="question-list"></div>
-<div class="actions game-actions"><button id="start" disabled>▶ Démarrer</button><button id="cancel" class="danger" disabled>■ Arrêter</button></div>
-<details id="generator"><summary>Générer des questions avec Claude</summary><p class="muted">Claude lance le skill generate-questions sur ce Mac : il rédige le lot, le contrôle et relit les faits. La banque n’est remplacée qu’après votre validation.</p>
-<form id="gen-form"><fieldset id="gen-form-fields" class="form-grid"><div class="form-field wide"><label for="gen-themes">Thèmes</label><input id="gen-themes" maxlength="300" required placeholder="cinéma, manga, géographie"></div>
-<div class="form-field"><label for="gen-count">Nombre de questions</label><input id="gen-count" type="number" min="1" max="200" step="1" value="20" required></div>
-<div class="form-field"><label for="gen-difficulty">Difficulté</label><select id="gen-difficulty"><option value="facile">Facile</option><option value="moyenne" selected>Moyenne</option><option value="difficile">Difficile</option></select></div></fieldset></form>
-<div class="actions"><button id="generate" class="secondary">✦ Générer</button><button id="generate-cancel" class="danger" disabled>Annuler la génération</button></div>
-<p id="gen-status" role="status" class="muted">Aucune génération en cours.</p><pre id="gen-events" hidden></pre>
-<div id="gen-review" hidden><h3>Lot généré</h3><ol id="gen-questions" class="generated-list"></ol><pre id="gen-checks" hidden></pre><pre id="gen-report"></pre>
-<div class="actions"><button id="gen-apply">Remplacer la banque par ce lot</button></div><p class="muted">L’ancienne banque est sauvegardée dans data/ avant le remplacement.</p></div></details>
-<details><summary>Gérer la banque de questions</summary><label for="bank">Questions et réponses (JSON)</label><textarea id="bank" spellcheck="false" rows="10"></textarea><div class="actions"><button id="save" class="secondary">Enregistrer les questions</button><button id="export" class="secondary">Exporter</button><label class="file-button">Importer<input type="file" id="import" accept="application/json,.json"></label></div>
-<h3>Régler et tester la correction</h3><label for="question">Question</label><select id="question"></select>
-<label for="criteria-true">Critère vrai · réponse attendue</label><input id="criteria-true" maxlength="500" placeholder="Diomaye Faye">
-<p class="muted">jev reçoit la question, ces deux critères et la réponse du joueur. La réponse est acceptée si son score atteint le seuil de confiance. Le critère vrai est aussi annoncé aux joueurs comme bonne réponse.</p>
-<label for="criteria-false">Critère faux</label><input id="criteria-false" maxlength="500" placeholder="Toute autre réponse">
-<label for="aliases">Alias de repli (un par ligne)</label><textarea id="aliases" rows="3" placeholder="Bassirou Diomaye Faye"></textarea>
-<p class="muted">Les alias ne sont jamais envoyés à jev. Ils servent seulement si jev est indisponible : la réponse doit alors correspondre exactement au critère vrai ou à un alias, après normalisation.</p>
-<div class="actions"><button id="apply-correction" class="secondary">Appliquer au brouillon JSON</button></div><p class="muted">Appliquez les critères au brouillon, puis cliquez sur « Enregistrer les questions ». Les parties déjà lancées gardent leurs règles.</p>
-<label for="candidate">Réponse du joueur</label><div class="actions"><input id="candidate" placeholder="Bassirou Diomaye Faye"><button id="check" class="secondary">Vérifier</button></div><p id="verdict" role="status" class="muted">Interroge jev avec les valeurs affichées, même avant enregistrement.</p></details>
+
+<section id="panel-jouer" class="panel" role="tabpanel" aria-labelledby="tab-jouer">
+ <div id="setup" class="card">
+  <h2><span class="emoji">🎯</span>Nouvelle partie</h2>
+  <h3>1 · Où jouer ?</h3>
+  <div class="choices" id="modes">
+   <label class="choice"><input type="radio" name="mode" value="rehearsal" checked><span class="choice-title">🎭 Répétition WhatsApp</span><span class="choice-text">Publie la partie dans le groupe <b class="group-name"></b>.</span></label>
+   <label class="choice"><input type="radio" name="mode" value="native"><span class="choice-title">✅ Partie validée</span><span class="choice-text" id="native-text">Publie dans le groupe après le test de transport contrôlé.</span></label>
+   <label class="choice"><input type="radio" name="mode" value="simulation"><span class="choice-title">🧪 Simulation</span><span class="choice-text">Aucun message envoyé : vous simulez les joueurs ici.</span></label>
+  </div>
+  <div class="row-between"><h3>2 · Quelles questions ?</h3><span class="row"><button id="select-all" class="btn ghost small">Toutes</button><button id="select-none" class="btn ghost small">Aucune</button></span></div>
+  <p id="selection-count" class="counter"></p>
+  <div id="question-list" class="pick-list"></div>
+  <div id="empty-bank" class="empty" hidden>📭 La banque est vide. Créez des questions dans l’onglet <b>Questions</b>.</div>
+  <p id="start-summary" class="summary"></p>
+  <div id="start-error" hidden></div>
+  <button id="start" class="btn primary big" disabled>🚀 Lancer la partie</button>
+ </div>
+
+ <div id="live" class="card live" hidden>
+  <div id="live-banner" class="banner"><span id="live-emoji" class="banner-emoji">📝</span><div><strong id="live-title"></strong><span id="live-subtitle"></span></div><div id="countdown" class="countdown" hidden><span id="remaining">—</span></div></div>
+  <div id="incident" class="alert error" hidden></div>
+  <div class="stats">
+   <div><small>Joueurs</small><strong id="players">0</strong></div>
+   <div><small>Question</small><strong id="round">—</strong></div>
+   <div><small>Mode</small><strong id="live-mode">—</strong></div>
+  </div>
+  <div id="prompt" class="prompt" hidden></div>
+  <h3>👥 Participants</h3>
+  <ul id="participants" class="chips"></ul>
+  <div class="row-between"><h3>🏆 Classement</h3><span id="ranking-status" class="tag"></span></div>
+  <div id="ranking" class="ranking"></div>
+  <details id="simulation-tools" class="sub" hidden><summary>🧪 Simuler un joueur</summary>
+   <div class="form-grid"><div class="field"><label for="author">Prénom</label><input id="author" value="Camille" maxlength="100"></div>
+   <div class="field"><label for="reply">Message</label><input id="reply" value="!join" maxlength="4000"></div></div>
+   <button id="inject" class="btn secondary">Envoyer comme ce joueur</button>
+  </details>
+  <button id="new-game" class="btn primary" hidden>🎯 Préparer une nouvelle partie</button>
+ </div>
 </section>
-<section class="card game-room"><div class="section-heading"><h2>La partie en direct</h2><span id="phase" class="badge">PRÊT</span></div>
-<div class="stats"><div><small>Participants</small><strong id="players">0</strong></div><div><small>Question</small><strong id="round">—</strong></div><div><small>Temps restant</small><strong id="remaining">—</strong></div></div>
-<p id="prompt" class="prompt">Configurez votre partie, puis cliquez sur Démarrer.</p>
-<h3>Participants</h3><ul id="participants" class="participants"><li class="muted">Les inscriptions apparaîtront ici.</li></ul>
-<div class="section-heading"><h3>Classement</h3><span id="ranking-status" class="muted">En attente</span></div>
-<p id="ranking-help" class="muted">Les scores se cumulent à chaque question.</p><div id="ranking" class="ranking"><p class="muted">Le classement apparaîtra après les premières inscriptions.</p></div>
-<details id="simulation-tools" hidden><summary>Simuler un joueur</summary><label for="author">Prénom</label><input id="author" value="Camille" maxlength="100"><label for="reply">Message</label><div class="actions"><input id="reply" value="!join" maxlength="4000"><button id="inject" class="secondary">Envoyer localement</button></div></details>
-<details><summary>Historique et récupération</summary><pre id="results">Aucune partie active.</pre><h3>Envois à vérifier</h3><pre id="pending">Aucun.</pre><label for="archive">Identifiant de la partie archivée</label><input id="archive" maxlength="32"><div class="actions"><button id="recover" class="secondary">Ouvrir l’archive</button><button id="resume" class="secondary">Vérifier et reprendre</button></div><p class="muted">Les archives s’ouvrent en pause. Les envois incertains ne sont jamais renvoyés automatiquement.</p></details>
+
+<section id="panel-questions" class="panel" role="tabpanel" aria-labelledby="tab-questions" hidden>
+ <div class="card" id="generator">
+  <h2><span class="emoji">✨</span>Générer avec Claude</h2>
+  <p class="lead">Claude rédige les questions, les contrôle et vérifie les faits sur le Mac. Vous validez le lot avant qu’il remplace la banque.</p>
+  <form id="gen-form" novalidate><fieldset id="gen-form-fields">
+   <div class="field"><label for="gen-themes">Thèmes</label><input id="gen-themes" maxlength="300" required placeholder="cinéma, manga, géographie"></div>
+   <div class="form-grid">
+    <div class="field"><label for="gen-count">Nombre de questions</label><input id="gen-count" type="number" inputmode="numeric" min="1" max="200" step="1" value="20" required></div>
+    <div class="field"><label for="gen-difficulty">Difficulté</label><select id="gen-difficulty"><option value="facile">😌 Facile</option><option value="moyenne" selected>🤔 Moyenne</option><option value="difficile">🔥 Difficile</option></select></div>
+   </div>
+  </fieldset></form>
+  <div class="row"><button id="generate" class="btn primary">✨ Générer</button><button id="generate-cancel" class="btn ghost" hidden>Annuler</button></div>
+  <div id="gen-progress" class="progress" hidden><div class="progress-bar"></div></div>
+  <p id="gen-status" class="status"></p>
+  <div id="gen-error" hidden></div>
+  <details id="gen-log" class="sub" hidden><summary>Voir le détail</summary><pre id="gen-events"></pre></details>
+  <div id="gen-review" hidden>
+   <h3>📋 Lot généré · <span id="gen-total"></span></h3>
+   <div id="gen-checks"></div>
+   <ol id="gen-questions" class="qa-list"></ol>
+   <details class="sub"><summary>Compte rendu de Claude</summary><pre id="gen-report"></pre></details>
+   <button id="gen-apply" class="btn primary">🔁 Remplacer la banque par ce lot</button>
+   <p class="hint">L’ancienne banque est sauvegardée dans data/ avant le remplacement.</p>
+  </div>
+ </div>
+
+ <div class="card">
+  <h2><span class="emoji">📚</span><span>Banque · <span id="bank-count">0</span> questions</span></h2>
+  <ol id="bank-list" class="qa-list"></ol>
+ </div>
+
+ <div class="card" id="tester">
+  <h2><span class="emoji">🎯</span>Régler la correction</h2>
+  <p class="lead">jev reçoit la question, ces deux critères et la réponse du joueur. Les alias sont acceptés d’office.</p>
+  <div class="field"><label for="question">Question</label><select id="question"></select></div>
+  <div class="field"><label for="criteria-true">✅ Bonne réponse (annoncée aux joueurs)</label><input id="criteria-true" maxlength="500"></div>
+  <div class="field"><label for="criteria-false">❌ Réponses à refuser</label><textarea id="criteria-false" rows="3" maxlength="500"></textarea></div>
+  <div class="field"><label for="aliases">Alias acceptés d’office, un par ligne</label><textarea id="aliases" rows="3"></textarea></div>
+  <button id="save-correction" class="btn secondary">💾 Enregistrer ces critères</button>
+  <div class="field try"><label for="candidate">Essayer une réponse</label><div class="row"><input id="candidate" placeholder="Réponse d’un joueur"><button id="check" class="btn primary">Tester</button></div></div>
+  <div id="verdict" class="verdict" hidden></div>
+  <div id="tester-error" hidden></div>
+ </div>
+
+ <details class="card collapsible">
+  <summary><span class="emoji">🧩</span>Éditer la banque en JSON</summary>
+  <p class="lead">Pour les modifications en masse. Importer remplit l’éditeur : enregistrez ensuite pour appliquer.</p>
+  <textarea id="bank" spellcheck="false" rows="12"></textarea>
+  <div id="bank-error" hidden></div>
+  <div class="row wrap"><button id="save" class="btn secondary">💾 Enregistrer</button><label class="btn ghost file">📥 Importer<input type="file" id="import" accept="application/json,.json"></label><button id="export" class="btn ghost">📤 Exporter</button></div>
+ </details>
 </section>
-</div><footer>Interface locale · Inscriptions automatiques · Correction jev · Scores transparents</footer>
-</main><script type="module" src="/static/app.js"></script>
-</body></html>
+
+<section id="panel-reglages" class="panel" role="tabpanel" aria-labelledby="tab-reglages" hidden>
+ <div id="settings-error" hidden></div>
+ <form id="config" novalidate><fieldset id="config-fields"><div id="settings-groups"></div>
+  <details class="card collapsible"><summary><span class="emoji">🔧</span>Avancé</summary><div id="advanced-settings" class="form-grid"></div></details>
+ </fieldset></form>
+ <div id="save-bar" class="save-bar" hidden><span>✏️ Modifications non enregistrées</span><span class="row"><button id="reset-settings" class="btn ghost small">Annuler</button><button id="save-settings" class="btn primary small">Enregistrer</button></span></div>
+</section>
+
+<section id="panel-historique" class="panel" role="tabpanel" aria-labelledby="tab-historique" hidden>
+ <div class="card">
+  <h2><span class="emoji">🧾</span>Dernière partie</h2>
+  <div id="history"></div>
+ </div>
+ <div class="card">
+  <h2><span class="emoji">🗂️</span>Rouvrir une partie archivée</h2>
+  <p class="lead">Collez l’identifiant de 32 caractères. La partie s’ouvre en pause, sans renvoyer de message.</p>
+  <div class="row"><input id="archive" maxlength="32" placeholder="ex. 3f2a…" autocapitalize="off" autocomplete="off"><button id="recover" class="btn secondary">Ouvrir</button></div>
+  <div id="archive-error" hidden></div>
+ </div>
+</section>
+</main>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

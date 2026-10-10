@@ -260,7 +260,7 @@ def test_complete_clean_native_quiz_and_archive_recovery(source,tmp_path,setting
     from quiz_app.engine import Engine,new_session
     from quiz_app.messages import STOP
     from quiz_app.repository import load_session
-    settings.nb_players_expected=1;settings.max_players=20;settings.max_questions=3
+    settings.nb_players_expected=1;settings.max_players=20
     bank=[question.model_copy(update={'id':f'question-{i}'}) for i in range(3)]
     now=[100.];reader=DatabaseReader(source,'Test');posted=[]
     def send(text,key):

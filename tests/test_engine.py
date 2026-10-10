@@ -10,7 +10,7 @@ from quiz_app.transport import Simulator
 @pytest.mark.parametrize('players,questions',[(20,30),(50,1),(1,2)])
 def test_complete_game(tmp_path,settings,question,players,questions,monkeypatch):
     monkeypatch.setattr("quiz_app.storage.os.fsync",lambda fd:None)
-    settings.max_players=players;settings.max_questions=questions
+    settings.max_players=players
     bank=[question.model_copy(update={'id':f'q{i}'}) for i in range(questions)]
     now=[100.]
     simulator=Simulator();session=new_session(settings,bank,'simulation')
