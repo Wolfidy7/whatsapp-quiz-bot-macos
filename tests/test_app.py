@@ -18,7 +18,8 @@ def root(tmp_path):
 def test_api(root):
     with TestClient(create_app(root,background=False)) as client:
         assert client.get('/').status_code==200
-        assert client.get('/static/core.js').status_code==200
+        version=client.get('/').text.split('/static/')[1].split('/')[0]
+        assert len(version)==12 and client.get(f'/static/{version}/core.js').status_code==200
         assert client.get('/api/settings').json()['max_players']==20
         assert client.get('/api/capabilities').json()=={'native_ready':False}
         assert client.get('/api/session').json()=={}
@@ -45,7 +46,11 @@ def test_api(root):
         assert client.get('/api/session',headers={'host':'attacker.test'}).status_code==403
         assert client.post('/api/cancel',headers={'origin':'https://attacker.test'}).status_code==403
         assert client.get('/api/session',headers={'origin':'http://testserver'}).status_code==200
-        assert client.get('/').headers['cache-control']=='no-cache' and client.get('/static/app.js').headers['cache-control']=='no-cache'
+        page=client.get('/');version=page.text.split('/static/')[1].split('/')[0]
+        assert page.headers['cache-control']=='no-cache' and f'src="/static/{version}/app.js"' in page.text and f'href="/static/{version}/style.css"' in page.text
+        assert client.get(f'/static/{version}/app.js').headers['cache-control']=='public, max-age=31536000, immutable'
+        assert client.get('/static/old/app.js').headers['cache-control']=='no-cache'
+        assert all(client.get(path).status_code==404 for path in ('/static/x/missing.js','/static/x/..%2Fapp.py','/static/x/.hidden','/static/app.js'))
         assert 'cache-control' not in client.get('/api/session').headers
 
 def test_controller_errors(root):
@@ -231,3 +236,10 @@ def test_remote_host_only_through_https_proxy(root):
         assert client.post('/api/cancel',headers={'host':remote,'origin':'https://attacker.test'}).status_code==403
         assert client.get('/api/session',headers={'host':'other.tail1234.ts.net'}).status_code==403
         assert client.post('/api/cancel',headers={'origin':f'https://{remote}'}).status_code==403
+
+
+def test_asset_version_changes_with_any_dashboard_file(tmp_path):
+    from quiz_app.app import asset_version
+    (tmp_path/'app.js').write_text('a');(tmp_path/'sub').mkdir()
+    first=asset_version(tmp_path);(tmp_path/'app.js').write_text('b')
+    assert first!=asset_version(tmp_path) and len(first)==12
