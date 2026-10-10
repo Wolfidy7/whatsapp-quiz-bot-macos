@@ -1,5 +1,11 @@
 # WhatsApp Quiz Studio for macOS
 
+<p align="center">
+  <img src="docs/demo.gif" width="420" alt="A quiz round in a WhatsApp group: players join, answer, jev grades each answer and the bot posts the final ranking">
+  <br>
+  <em>Simulated round: fictional group and players, real bot messages and scoring.</em>
+</p>
+
 A local quiz host for WhatsApp Desktop: answers graded by the TypeSafe jev decision model with a local alias fallback, chronological first answers, transparent rank-based points and private JSON storage. There is no WhatsApp Web; the only cloud call is the jev evaluation of each player's answer text. Application data stays in JSON. Incoming messages are read from WhatsApp Desktop’s existing local SQLite database through read-only connections; readable sender names are resolved from the adjacent native ContactsV2.sqlite when available. The bot never writes to either database.
 
 The application includes a French local dashboard with editable game settings, Start/Stop controls, automatic participant names and a live leaderboard, plus a question editor, an answer tester, a deterministic simulator, direct native message reading, an accessibility sender, durable game snapshots and explicit incident recovery. **Validated native gameplay is gated by a controlled transport test; a separate, explicit real-rehearsal mode is available for testing.** Direct reading has recovered 100 local records without scrolling, preserving their authors, timestamps and native sequence. That diagnostic does not replace a controlled question/STOP test.
