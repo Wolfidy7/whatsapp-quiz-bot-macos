@@ -19,6 +19,7 @@ from quiz_app.config import load_api_key, load_remote_hosts, load_settings, save
 from quiz_app.database_reader import DatabaseReader, DatabaseTransport
 from quiz_app.engine import Engine, new_session
 from quiz_app.errors import QuizError
+from quiz_app.generation import GenerationRequest, Generator, Runner, claude_runner
 from quiz_app.grading import Scorer, evaluate_answer, jev_scorer, local_verdict
 from quiz_app.live import live_view
 from quiz_app.models import Question, Settings, StrictModel
@@ -58,12 +59,13 @@ class AnswerTest(StrictModel):
 class Controller:
     """Serialize all actions and hold at most one active local game."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, runner: Runner = claude_runner) -> None:
         """Bind local private files without opening WhatsApp or starting a game."""
         self.root = root
         self.lock = RLock()
         self.engine: Engine | None = None
         self.stop_requested = Event()
+        self.generator = Generator(root, runner)
 
     def start(self, value: StartRequest) -> dict[str, object]:
         """Start one immutable game snapshot; require validation or explicit native rehearsal."""
@@ -167,6 +169,13 @@ class Controller:
             engine.tick()
             return self.state()
 
+    def apply_generation(self) -> dict[str, object]:
+        """Replace the bank with the reviewed generated batch, never while a game is running."""
+        with self.lock:
+            if self.engine and self.engine.session.phase not in ("finished", "cancelled"):
+                raise QuizError("GAME_ACTIVE", "Terminez ou arrêtez la partie avant de remplacer la banque")
+            return self.generator.apply(self.root / "data/questions.json")
+
     def require_engine(self) -> Engine:
         """Return the active controller or raise a user-facing missing-game error."""
         if self.engine is None:
@@ -247,6 +256,7 @@ def make_lifespan(
             with locked(controller.root / "data/service.lock"):
                 yield
         finally:
+            await controller.generator.cancel()
             if task:
                 task.cancel()
                 try:
@@ -261,31 +271,40 @@ LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "testserver"})
 Boundary = Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]
 
 
+def foreign_request(request: Request, remote_hosts: frozenset[str]) -> str | None:
+    """Return the error code for a foreign host or origin; remote hosts come through the HTTPS proxy."""
+    hostname = request.url.hostname
+    if hostname not in LOCAL_HOSTS | remote_hosts:
+        return "HOST_FORBIDDEN"
+    host = request.headers.get("host")
+    allowed = {f"{request.url.scheme}://{host}"}
+    if hostname in remote_hosts:
+        # tailscale serve terminates HTTPS and forwards plain HTTP to the loopback port.
+        allowed.add(f"https://{host}")
+    origin = request.headers.get("origin")
+    return "ORIGIN_FORBIDDEN" if origin and origin not in allowed else None
+
+
 def local_boundary(remote_hosts: frozenset[str] = frozenset()) -> Boundary:
-    """Reject foreign hosts and origins; remote hosts are only reachable through the HTTPS Tailscale proxy."""
+    """Reject foreign hosts, origins and oversized bodies; never let browsers keep a stale dashboard."""
 
     async def boundary(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        hostname = request.url.hostname
-        if hostname not in LOCAL_HOSTS | remote_hosts:
-            return JSONResponse({"error": "HOST_FORBIDDEN"}, status_code=403)
-        host = request.headers.get("host")
-        allowed = {f"{request.url.scheme}://{host}"}
-        if hostname in remote_hosts:
-            # tailscale serve terminates HTTPS and forwards plain HTTP to the loopback port.
-            allowed.add(f"https://{host}")
-        origin = request.headers.get("origin")
-        if origin and origin not in allowed:
-            return JSONResponse({"error": "ORIGIN_FORBIDDEN"}, status_code=403)
+        if error := foreign_request(request, remote_hosts):
+            return JSONResponse({"error": error}, status_code=403)
         if request.method in ("POST", "PUT") and len(await request.body()) > 1_000_000:
             return JSONResponse({"error": "PAYLOAD_TOO_LARGE"}, status_code=413)
-        return await call_next(request)
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            # Revalidate the dashboard on every load so a stale cached script never survives an update.
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     return boundary
 
 
-def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
-    """Build the local app with private root injection for isolated integration tests."""
-    controller = Controller(root)
+def create_app(root: Path = ROOT, background: bool = True, runner: Runner = claude_runner) -> FastAPI:
+    """Build the local app with private root and agent-runner injection for isolated tests."""
+    controller = Controller(root, runner)
 
     app = FastAPI(title="WhatsApp Quiz · local", lifespan=make_lifespan(controller, background))
     app.state.controller = controller
@@ -360,6 +379,22 @@ def create_app(root: Path = ROOT, background: bool = True) -> FastAPI:
         """Read current enrollment, round evidence and results."""
         return controller.state()
 
+    @app.get("/api/generation")
+    def generation() -> dict[str, object]:
+        """Report the background generation, its progress and, once finished, the checked batch."""
+        return controller.generator.state()
+
+    @app.post("/api/generation")
+    async def generate(value: GenerationRequest) -> dict[str, object]:
+        """Start the generate-questions skill in the background; the bank is untouched until applied."""
+        return controller.generator.start(value)
+
+    @app.post("/api/generation/cancel")
+    async def cancel_generation() -> dict[str, object]:
+        """Stop a running generation."""
+        return await controller.generator.cancel()
+
+    app.post("/api/generation/apply")(controller.apply_generation)
     app.post("/api/start")(controller.start)
     app.post("/api/inject")(controller.inject)
     app.post("/api/cancel")(controller.cancel)

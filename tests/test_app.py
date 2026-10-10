@@ -45,6 +45,8 @@ def test_api(root):
         assert client.get('/api/session',headers={'host':'attacker.test'}).status_code==403
         assert client.post('/api/cancel',headers={'origin':'https://attacker.test'}).status_code==403
         assert client.get('/api/session',headers={'origin':'http://testserver'}).status_code==200
+        assert client.get('/').headers['cache-control']=='no-cache' and client.get('/static/app.js').headers['cache-control']=='no-cache'
+        assert 'cache-control' not in client.get('/api/session').headers
 
 def test_controller_errors(root):
     controller=Controller(root);controller.tick()

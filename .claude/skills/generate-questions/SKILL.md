@@ -61,6 +61,8 @@ Utilise la recherche web pour les faits récents, chiffrés ou dont tu n'es pas 
 
 ## 6. Remplacer la banque
 
+Si tu es lancé depuis le tableau de bord, n'exécute pas cette étape : l'application présente le lot à l'utilisateur et remplace la banque elle-même après sa validation. Passe directement au compte rendu.
+
 ```bash
 PYTHONPATH=. .venv/bin/python scripts/check_questions.py data/generated-questions.json --replace
 ```

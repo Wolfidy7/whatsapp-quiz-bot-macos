@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {summary,remaining,parseBank,label,withCorrection,grading,verdictText} from '../../quiz_app/static/core.js';
+import {summary,remaining,parseBank,label,withCorrection,grading,verdictText,generationStatus} from '../../quiz_app/static/core.js';
 describe('pure dashboard rules',()=>{
  it('formats complete evidence safely',()=>{
   expect(summary({})).toBe('Aucune partie active.');
@@ -38,4 +38,10 @@ it('explains jev and fallback grading',()=>{
  expect(verdictText({accepted:true,alias:null,reason:'Score jev 0.900 ≥ seuil 0.800.'})).toBe('Acceptée · Score jev 0.900 ≥ seuil 0.800.');
  expect(verdictText({accepted:true,alias:'Faye',reason:'Repli local'})).toBe('Acceptée · référence « Faye » · Repli local');
  expect(verdictText({accepted:false,alias:null,reason:'Score jev 0.100 < seuil 0.800.'})).toMatch(/^Refusée · /);
+});
+it('describes every generation state',()=>{
+  expect(generationStatus({status:'running',started:100},230)).toContain('2 min 10 s');
+  expect(generationStatus({status:'running',started:300},230)).toContain('0 min 0 s');
+  expect(generationStatus({status:'failed',error:'GENERATION_FAILED'})).toBe('Échec de la génération : GENERATION_FAILED');
+  expect(generationStatus({status:'idle'})).toBe('Aucune génération en cours.');expect(generationStatus({})).toBe('');
 });
