@@ -32,7 +32,7 @@ export function withCorrection(question, criterionTrue, criterionFalse, aliases)
 /** Describe how one answer was graded: jev score against the threshold, or the local fallback. */
 export function grading(result) {
   if (result.source === 'jev') return ` · jev ${result.score.toFixed(2)}`;
-  return result.source === 'fallback' ? ' · repli local' : '';
+  return ({fallback: ' · repli local', local: ' · règle locale'})[result.source] || '';
 }
 /** Explain a tester verdict with its decision source and, for the fallback, the matching reference. */
 export function verdictText(result) {

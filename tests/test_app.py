@@ -25,7 +25,7 @@ def test_api(root):
         bank=client.get('/api/questions').json()
         assert client.put('/api/questions',json=bank).status_code==200
         assert client.put('/api/questions',json=[]).status_code==409
-        assert client.post('/api/test-answer',json={'question':bank[0],'answer':'PARIS'}).json()=={'accepted':True,'alias':'Paris','reason':'Repli local (jev indisponible) : correspondance exacte après normalisation.','score':None,'source':'fallback'}
+        assert client.post('/api/test-answer',json={'question':bank[0],'answer':'PARIS'}).json()=={'accepted':True,'alias':'Paris','reason':'Règle locale : correspondance exacte avec une référence.','score':None,'source':'local'}
         assert client.post('/api/start',json={'mode':'native','question_ids':['capital']}).status_code==409
         assert client.post('/api/start',json={'mode':'simulation','question_ids':['missing']}).status_code==409
         assert client.post('/api/start',json={'mode':'simulation','question_ids':['capital','capital']}).status_code==409

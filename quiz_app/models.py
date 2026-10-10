@@ -137,7 +137,7 @@ class Result(StrictModel):
     alias: str | None = None
     reason: str = ""
     score: float | None = Field(default=None, ge=0, le=1)
-    source: Literal["jev", "fallback", ""] = ""
+    source: Literal["jev", "fallback", "local", ""] = ""
     rank: int | None = None
     points: int = 0
 

@@ -6,7 +6,7 @@ from typing import cast
 from uuid import uuid4
 
 from quiz_app.errors import QuizError
-from quiz_app.grading import Scorer, evaluate_answer, extract_answer, offline
+from quiz_app.grading import Scorer, evaluate_answer, extract_answer, local_verdict, offline
 from quiz_app.history import reconcile_game
 from quiz_app.messages import (
     REGISTRATION_CLOSED,
@@ -89,8 +89,9 @@ def grade_answers(
     settings: Settings,
     scorer: Scorer = offline,
 ) -> list[Result]:
-    """Score all first answers at once, then rank them in insertion order; absent players get zero."""
-    scores = scorer(question, first) if first else {}
+    """Score undecided first answers at once, then rank in insertion order; absent players get zero."""
+    pending = {p: a for p, a in first.items() if local_verdict(question, a, settings.ignore_accents) is None}
+    scores = scorer(question, pending) if pending else {}
     results: dict[str, Result] = {}
     rank = 0
     for player, answer in first.items():

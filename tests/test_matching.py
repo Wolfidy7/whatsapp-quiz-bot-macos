@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from quiz_app.app import create_app
 from quiz_app.engine import Engine, grade_answers, new_session
-from quiz_app.grading import evaluate_answer, fallback_verdict, jev_scorer, noul_question, offline
+from quiz_app.grading import evaluate_answer, fallback_verdict, jev_scorer, local_verdict, noul_question, offline
 from quiz_app.live import live_view
 from quiz_app.models import Question
 from quiz_app.repository import load_bank, load_session, save_bank
@@ -35,19 +35,42 @@ class FakeJev:
 
 @pytest.mark.parametrize("score,accepted,sign", [(0.8, True, "≥"), (0.95, True, "≥"), (0.79, False, "<"), (0.0, False, "<")])
 def test_jev_threshold_is_inclusive(score, accepted, sign):
-    verdict = evaluate_answer(rule(aliases=["Bassirou Diomaye Faye"]), "Diomaye Faye", score, 0.8)
+    verdict = evaluate_answer(rule(aliases=["Bassirou Diomaye Faye"]), "Bassirou", score, 0.8)
     assert (verdict.accepted, verdict.source, verdict.score, verdict.alias) == (accepted, "jev", score, None)
     assert verdict.reason == f"Score jev {score:.3f} {sign} seuil 0.800."
 
 
-@pytest.mark.parametrize("answer,accepted,alias", [
-    ("  diomaye FAYE ! ", True, "Diomaye Faye"), ("Bassirou Diomaye Faye", True, "Bassirou Diomaye Faye"),
-    ("Faye Diomaye", False, None), ("Diomaye", False, None), ("", False, None),
+@pytest.mark.parametrize("answer,accepted,alias,source", [
+    ("  diomaye FAYE ! ", True, "Diomaye Faye", "local"),
+    ("Bassirou Diomaye Faye", True, "Bassirou Diomaye Faye", "local"),
+    ("Faye Diomaye", False, None, "fallback"), ("Diomaye", False, None, "fallback"), ("", False, None, "fallback"),
 ])
-def test_fallback_uses_true_criterion_and_aliases_exactly(answer, accepted, alias):
+def test_references_are_exact_and_unscored_answers_fall_back(answer, accepted, alias, source):
     verdict = evaluate_answer(rule(aliases=["Bassirou Diomaye Faye"]), answer, None, 0.8)
-    assert (verdict.accepted, verdict.alias, verdict.source, verdict.score) == (accepted, alias, "fallback", None)
-    assert verdict.reason.startswith("Repli local (jev indisponible) : ")
+    assert (verdict.accepted, verdict.alias, verdict.source, verdict.score) == (accepted, alias, source, None)
+    prefix = "Règle locale : " if source == "local" else "Repli local (jev indisponible) : "
+    assert verdict.reason.startswith(prefix)
+
+
+@pytest.mark.parametrize("answer,accepted", [
+    ("Diomaye Faye", True), ("bassirou diomaye faye !", True),
+    ("Sénégal", False), ("le président actuel", False), ("SENEGAL", False), ("Qui", False),
+])
+def test_local_rules_beat_any_jev_score(answer, accepted):
+    question = rule(aliases=["Bassirou Diomaye Faye"])
+    for score in (0.0, 0.99):
+        verdict = evaluate_answer(question, answer, score, 0.8)
+        assert (verdict.accepted, verdict.source, verdict.score) == (accepted, "local", None)
+    reason = "correspondance exacte avec une référence." if accepted else "la réponse reprend un élément de la question."
+    assert verdict.reason == "Règle locale : " + reason
+
+
+def test_local_rules_leave_other_answers_to_jev():
+    question = rule(aliases=["Bassirou Diomaye Faye"])
+    for answer in ("Macky Sall", "Sénégalais", "président actuel du Sénégal ou Macky", "!!", ""):
+        assert local_verdict(question, answer) is None
+    assert local_verdict(rule("Été"), "ete").accepted
+    assert local_verdict(rule("Été"), "ete", False) is None
 
 
 def test_fallback_accents_follow_the_setting():
@@ -99,16 +122,17 @@ def test_invalid_questions_rejected(value):
 
 
 def test_grading_mixes_jev_and_fallback_and_ranks_in_order(settings):
-    scorer = FakeJev({"bassirou": 0.91, "macky sall": 0.02, "diomaye faye": None})
-    first = {"A": "Macky Sall", "B": "Bassirou", "C": "Diomaye Faye", "D": "Faye Diomaye"}
-    settings.max_players = 5
-    results = grade_answers(first, ["A", "B", "C", "D", "E"], rule(), settings, scorer)
-    assert scorer.calls == [("fact1_senegal_president", first)]
+    scorer = FakeJev({"bassirou": 0.91, "macky sall": 0.02, "faye diomaye": None})
+    first = {"A": "Macky Sall", "B": "Bassirou", "C": "Diomaye Faye", "D": "Faye Diomaye", "F": "Sénégal"}
+    settings.max_players = 6
+    results = grade_answers(first, ["A", "B", "C", "D", "E", "F"], rule(), settings, scorer)
+    assert scorer.calls == [("fact1_senegal_president", {"A": "Macky Sall", "B": "Bassirou", "D": "Faye Diomaye"})]
     assert [(r.player, r.accepted, r.rank, r.points, r.source, r.score) for r in results] == [
         ("A", False, None, 0, "jev", 0.02), ("B", True, 1, 100, "jev", 0.91),
-        ("C", True, 2, 80, "fallback", None), ("D", False, None, 0, "fallback", None),
-        ("E", False, None, 0, "", None),
+        ("C", True, 2, 84, "local", None), ("D", False, None, 0, "fallback", None),
+        ("E", False, None, 0, "", None), ("F", False, None, 0, "local", None),
     ]
+    assert grade_answers({"A": "Diomaye Faye"}, ["A"], rule(), settings, scorer)[0].source == "local"
     assert grade_answers({}, ["A"], rule(), settings, scorer)[0].source == "" and len(scorer.calls) == 1
 
 
@@ -130,8 +154,11 @@ def test_editor_storage_and_jev_tester(tmp_path, monkeypatch):
             "accepted": True, "alias": None, "reason": "Score jev 0.850 ≥ seuil 0.800.", "score": 0.85, "source": "jev"}
         strict = client.post("/api/test-answer", json=dict(trial, jev_threshold=0.9, jev_model="jev-2")).json()
         assert strict["accepted"] is False and calls[-1] == ("", "jev-2")
-        offline_trial = client.post("/api/test-answer", json=dict(trial, answer="Bassirou Diomaye Faye")).json()
-        assert offline_trial["accepted"] and offline_trial["source"] == "fallback"
+        jev_calls = len(calls)
+        alias_trial = client.post("/api/test-answer", json=dict(trial, answer="Bassirou Diomaye Faye")).json()
+        assert alias_trial["accepted"] and alias_trial["source"] == "local" and len(calls) == jev_calls
+        echo_trial = client.post("/api/test-answer", json=dict(trial, answer="Sénégal")).json()
+        assert not echo_trial["accepted"] and echo_trial["source"] == "local" and len(calls) == jev_calls
         for invalid in ({"jev_threshold": 1.5}, {"jev_model": "bad model"}):
             assert client.post("/api/test-answer", json=dict(trial, **invalid)).status_code == 422
         legacy = {"id": "old", "question": "Qui ?", "answer": "Faye"}
